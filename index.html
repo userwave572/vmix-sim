@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LiveSim — Production Training</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- TOP BAR -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="logo">LIVESIM</span>
+      <span class="logo-sub">Production Training v1.0</span>
+    </div>
+    <div class="topbar-center">
+      <div class="on-air-indicator" id="on-air-dot"></div>
+      <span class="on-air-label" id="on-air-label">STANDBY</span>
+      <span class="stream-timer" id="stream-timer">00:00:00</span>
+    </div>
+    <div class="topbar-right">
+      <button class="btn-outline" onclick="openModal('inputs-modal')"><span class="mono">⌘</span> Manage Inputs</button>
+      <button class="btn-outline" onclick="openModal('shortcuts-modal')"><span class="mono">?</span> Shortcuts</button>
+    </div>
+  </header>
+
+  <!-- MAIN LAYOUT -->
+  <main class="main-layout">
+
+    <!-- LEFT: INPUT TILES -->
+    <section class="inputs-panel">
+      <div class="panel-label">INPUTS <span class="panel-count" id="input-count">0</span></div>
+      <div class="input-grid" id="input-grid">
+        <div class="input-empty" id="input-empty">
+          <span>No inputs yet</span>
+          <button class="btn-primary" onclick="openModal('inputs-modal')">+ Add Input</button>
+        </div>
+      </div>
+      <div class="input-shortcuts-hint">
+        <span>1–9 → preview &nbsp;|&nbsp; Shift+1–9 → cut direct</span>
+      </div>
+    </section>
+
+    <!-- CENTER: PREVIEW + OUTPUT -->
+    <section class="monitor-panel">
+      <div class="monitor-row">
+        <div class="monitor-wrap preview-wrap">
+          <div class="monitor-label-bar preview-bar">
+            <span class="monitor-badge preview-badge">PRV</span>
+            <span class="monitor-name" id="preview-name">—</span>
+          </div>
+          <div class="monitor-screen" id="preview-screen">
+            <div class="monitor-placeholder">
+              <span class="placeholder-text">PREVIEW</span>
+            </div>
+          </div>
+        </div>
+        <div class="monitor-wrap output-wrap">
+          <div class="monitor-label-bar output-bar">
+            <span class="monitor-badge output-badge">PGM</span>
+            <span class="monitor-name" id="output-name">—</span>
+          </div>
+          <div class="monitor-screen" id="output-screen">
+            <div class="monitor-placeholder">
+              <span class="placeholder-text">PROGRAM</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TRANSITION CONTROLS -->
+      <div class="transition-bar">
+        <div class="trans-type-group">
+          <button class="trans-type active" data-trans="cut" onclick="setTrans(this)">CUT</button>
+          <button class="trans-type" data-trans="fade" onclick="setTrans(this)">FADE</button>
+          <button class="trans-type" data-trans="wipe" onclick="setTrans(this)">WIPE</button>
+          <button class="trans-type" data-trans="zoom" onclick="setTrans(this)">ZOOM</button>
+        </div>
+        <div class="dur-group">
+          <label class="dur-label">DUR</label>
+          <input type="range" min="100" max="2000" step="100" value="500" id="dur-slider" class="dur-slider">
+          <span class="dur-val" id="dur-val">0.5s</span>
+        </div>
+        <button class="cut-btn" id="cut-btn" onclick="doTransition()">
+          <span>CUT / TRANS</span>
+          <span class="cut-hint">SPACE</span>
+        </button>
+        <button class="auto-btn" id="auto-btn" onclick="doAuto()">
+          <span>AUTO</span>
+          <span class="cut-hint">A</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- RIGHT: STREAM DECK + LOG -->
+    <section class="right-panel">
+
+      <!-- STREAM DECK TAB / REPLAY TAB -->
+      <div class="right-tabs">
+        <button class="right-tab active" onclick="switchRightTab('deck', this)">STREAM DECK</button>
+        <button class="right-tab" onclick="switchRightTab('log', this)">EVENT LOG</button>
+      </div>
+
+      <div id="tab-deck" class="right-tab-content active">
+        <div class="deck-status-row">
+          <div class="ds"><div class="ds-lbl">BUFFER</div><div class="ds-val" id="buf-time">00:00</div></div>
+          <div class="ds"><div class="ds-lbl">MARK IN</div><div class="ds-val" id="mark-in-disp">--:--</div></div>
+          <div class="ds"><div class="ds-lbl">MARK OUT</div><div class="ds-val" id="mark-out-disp">--:--</div></div>
+          <div class="ds"><div class="ds-lbl">SPEED</div><div class="ds-val" id="speed-disp">1x</div></div>
+        </div>
+
+        <div class="deck-label">REPLAY CONTROLLER</div>
+        <div class="deck-grid" id="deck-grid"></div>
+
+        <div class="deck-label" style="margin-top:14px;">SCENE SHORTCUTS</div>
+        <div class="scene-grid" id="scene-grid"></div>
+      </div>
+
+      <div id="tab-log" class="right-tab-content">
+        <div class="log-toolbar">
+          <span class="log-count" id="log-count">0 events</span>
+          <button class="btn-sm" onclick="clearLog()">Clear</button>
+        </div>
+        <div class="event-log" id="event-log">
+          <div class="log-empty">Waiting for production actions...</div>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+</div>
+
+<!-- MODAL: MANAGE INPUTS -->
+<div class="modal-overlay" id="inputs-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">Manage Inputs</span>
+      <button class="modal-close" onclick="closeModal('inputs-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="input-form-tabs">
+        <button class="ift active" onclick="switchFormTab('yt', this)">YouTube / URL</button>
+        <button class="ift" onclick="switchFormTab('file', this)">Local File</button>
+        <button class="ift" onclick="switchFormTab('color', this)">Colour / Still</button>
+      </div>
+
+      <div id="form-yt" class="input-form active">
+        <label class="form-label">YouTube URL or video embed URL</label>
+        <input type="text" id="yt-url" class="form-input" placeholder="https://www.youtube.com/watch?v=...">
+        <label class="form-label">Input name (e.g. CAM 1 — Wide)</label>
+        <input type="text" id="yt-name" class="form-input" placeholder="CAM 1">
+        <button class="btn-primary full" onclick="addYouTubeInput()">Add YouTube Input</button>
+      </div>
+
+      <div id="form-file" class="input-form">
+        <label class="form-label">Select video file</label>
+        <input type="file" id="file-input" accept="video/*" class="form-file">
+        <label class="form-label">Input name</label>
+        <input type="text" id="file-name" class="form-input" placeholder="CAM 2 — Sideline">
+        <button class="btn-primary full" onclick="addFileInput()">Add File Input</button>
+      </div>
+
+      <div id="form-color" class="input-form">
+        <label class="form-label">Colour or still type</label>
+        <select id="color-type" class="form-input">
+          <option value="bars">Colour Bars</option>
+          <option value="black">Black</option>
+          <option value="scorebug">Scorebug (overlay)</option>
+          <option value="lowerthird">Lower Third</option>
+          <option value="titles">Titles</option>
+        </select>
+        <label class="form-label">Input name</label>
+        <input type="text" id="color-name" class="form-input" placeholder="Scorebug">
+        <button class="btn-primary full" onclick="addColorInput()">Add Input</button>
+      </div>
+
+      <div class="inputs-list-label">Current inputs <span id="inputs-list-count">0</span></div>
+      <div class="inputs-list" id="inputs-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: SHORTCUTS -->
+<div class="modal-overlay" id="shortcuts-modal">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <span class="modal-title">Keyboard Shortcuts</span>
+      <button class="modal-close" onclick="closeModal('shortcuts-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <table class="shortcuts-table">
+        <tr><td class="sk-key">1 – 9</td><td>Send input to Preview</td></tr>
+        <tr><td class="sk-key">Shift + 1–9</td><td>Cut input directly to Program</td></tr>
+        <tr><td class="sk-key">Space</td><td>Cut / Transition</td></tr>
+        <tr><td class="sk-key">A</td><td>Auto transition</td></tr>
+        <tr><td class="sk-key">F1–F4</td><td>Select transition type (Cut/Fade/Wipe/Zoom)</td></tr>
+        <tr><td class="sk-key">I</td><td>Mark In (replay)</td></tr>
+        <tr><td class="sk-key">O</td><td>Mark Out (replay)</td></tr>
+        <tr><td class="sk-key">P</td><td>Play replay</td></tr>
+        <tr><td class="sk-key">L</td><td>Loop replay</td></tr>
+        <tr><td class="sk-key">R</td><td>Return to live</td></tr>
+        <tr><td class="sk-key">[ / ]</td><td>Speed 0.5x / 1x</td></tr>
+        <tr><td class="sk-key">Esc</td><td>Close modal</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
