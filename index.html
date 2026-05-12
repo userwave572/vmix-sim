@@ -27,13 +27,13 @@
 <!-- BODY -->
 <div class="vmix-body">
 
-  <!-- INPUT TILES ROW -->
+  <!-- INPUT TILES -->
   <div class="inputs-section">
     <div class="inputs-row" id="inputs-row">
       <div class="no-inp" id="no-inp-msg">No inputs — click <b>+ Add Input</b> to begin</div>
     </div>
     <div class="inputs-bar">
-      <span class="inputs-bar-hint">Click tile → Preview &nbsp;|&nbsp; Switcher row buttons → direct to Program</span>
+      <span class="inputs-bar-hint">Click tile → Preview &nbsp;|&nbsp; Switcher row → direct to Output</span>
     </div>
   </div>
 
@@ -47,16 +47,18 @@
         <span class="mon-src" id="prv-src">—</span>
         <span class="mon-hint">Keys 1–9</span>
       </div>
+      <!-- mon-screen contains media + lt overlay + empty label -->
       <div class="mon-screen" id="prv-screen">
-        <div class="mon-empty">PREVIEW</div>
+        <div class="mon-media" id="prv-media"></div>
+        <div class="lt-container" id="prv-lt"></div>
+        <div class="mon-empty" id="prv-empty">PREVIEW</div>
       </div>
-      <div class="lt-container" id="prv-lt"></div>
     </div>
 
-    <!-- TRANS COLUMN -->
+    <!-- TRANSITION COLUMN -->
     <div class="trans-col">
+      <div class="trans-section-lbl">TRANSITION</div>
       <div class="trans-types-group">
-        <div class="trans-section-lbl">TRANSITION</div>
         <button class="trans-type-btn active" data-t="Cut"   onclick="selTrans(this)">Cut</button>
         <button class="trans-type-btn"        data-t="Fade"  onclick="selTrans(this)">Fade</button>
         <button class="trans-type-btn"        data-t="Wipe"  onclick="selTrans(this)">Wipe</button>
@@ -68,7 +70,7 @@
         <input type="range" id="dur-slider" min="200" max="3000" step="100" value="1000">
         <span class="dur-val" id="dur-val">1.0s</span>
       </div>
-      <button class="trans-go" id="trans-go" onclick="doTransition()">
+      <button class="trans-go" onclick="doTransition()">
         CUT / TRANS
         <span class="go-key">SPACE</span>
       </button>
@@ -90,14 +92,15 @@
         <span class="mon-hint">Switcher row → direct cut</span>
       </div>
       <div class="mon-screen" id="pgm-screen">
-        <div class="mon-empty">OUTPUT</div>
+        <div class="mon-media" id="pgm-media"></div>
+        <div class="lt-container" id="pgm-lt"></div>
+        <div class="mon-empty" id="pgm-empty">OUTPUT</div>
+        <!-- FTB overlay sits inside pgm-screen -->
+        <div class="ftb-overlay" id="ftb-overlay"></div>
       </div>
-      <div class="lt-container" id="pgm-lt"></div>
-      <!-- FTB overlay -->
-      <div class="ftb-overlay" id="ftb-overlay"></div>
     </div>
 
-    <!-- RIGHT: AUDIO + REPLAY -->
+    <!-- RIGHT COL -->
     <div class="right-col">
       <!-- AUDIO -->
       <div class="audio-panel">
@@ -106,7 +109,7 @@
           <div class="meter-wrap"><div class="meter-track"><div class="meter-fill" id="ml"></div></div><span class="meter-ch">L</span></div>
           <div class="meter-wrap"><div class="meter-track"><div class="meter-fill" id="mr"></div></div><span class="meter-ch">R</span></div>
           <div class="vol-wrap">
-            <input type="range" id="vol-slider" min="0" max="100" value="80" orient="vertical" class="vol-slider">
+            <input type="range" id="vol-slider" min="0" max="100" value="80" class="vol-slider">
             <span class="vol-val" id="vol-val">80</span>
           </div>
         </div>
@@ -116,12 +119,12 @@
       <div class="replay-panel">
         <div class="panel-lbl">REPLAY CONTROLLER</div>
         <div class="replay-stats-grid">
-          <div class="rsg"><div class="rsg-l">BUFFER</div><div class="rsg-v mono" id="buf-disp">00:00:00</div></div>
+          <div class="rsg"><div class="rsg-l">VIDEO TIME</div><div class="rsg-v mono" id="buf-disp">--:--:--</div></div>
           <div class="rsg"><div class="rsg-l">SPEED</div><div class="rsg-v mono" id="spd-disp">1.0x</div></div>
           <div class="rsg"><div class="rsg-l">MARK IN</div><div class="rsg-v mono" id="in-disp">--:--:--</div></div>
           <div class="rsg"><div class="rsg-l">MARK OUT</div><div class="rsg-v mono" id="out-disp">--:--:--</div></div>
         </div>
-        <div class="replay-status-bar" id="replay-status-bar">IDLE</div>
+        <div class="replay-status-bar" id="replay-status-bar">IDLE — load a video input to use replay</div>
         <div class="replay-btns">
           <button class="rb rb-mark" onclick="doMarkIn()">◀ Mark In <span class="rk">I</span></button>
           <button class="rb rb-mark" onclick="doMarkOut()">Mark Out ▶ <span class="rk">O</span></button>
@@ -144,7 +147,7 @@
     </div>
   </div>
 
-  <!-- SWITCHER ROW (vMix-style: clicking here goes direct to Program) -->
+  <!-- SWITCHER ROW -->
   <div class="switcher-section">
     <div class="sw-label-row">
       <span class="sw-section-lbl">SWITCHER — click to cut direct to OUTPUT</span>
@@ -177,50 +180,26 @@
   <div class="config-body">
     <div class="cfg-section">
       <div class="cfg-lbl">TRANSITIONS</div>
-      <div class="cfg-row">
-        <label>Default transition</label>
+      <div class="cfg-row"><label>Default transition</label>
         <select id="cfg-default-trans" class="cfg-sel">
-          <option value="Cut">Cut</option>
-          <option value="Fade">Fade</option>
-          <option value="Wipe">Wipe</option>
-          <option value="Slide">Slide</option>
-          <option value="Zoom">Zoom</option>
+          <option value="Cut">Cut</option><option value="Fade">Fade</option>
+          <option value="Wipe">Wipe</option><option value="Slide">Slide</option><option value="Zoom">Zoom</option>
         </select>
       </div>
-      <div class="cfg-row">
-        <label>Default duration (ms)</label>
-        <input type="number" id="cfg-default-dur" class="cfg-inp" value="1000" min="100" max="5000" step="100">
-      </div>
-      <div class="cfg-row">
-        <label>Fade to Black duration (ms)</label>
-        <input type="number" id="cfg-ftb-dur" class="cfg-inp" value="500" min="100" max="3000" step="100">
-      </div>
+      <div class="cfg-row"><label>Default duration (ms)</label><input type="number" id="cfg-default-dur" class="cfg-inp" value="1000" min="100" max="5000" step="100"></div>
+      <div class="cfg-row"><label>Fade to Black duration (ms)</label><input type="number" id="cfg-ftb-dur" class="cfg-inp" value="500" min="100" max="3000" step="100"></div>
     </div>
     <div class="cfg-section">
-      <div class="cfg-lbl">CUSTOM TRANSITIONS</div>
-      <p class="cfg-note">Set a specific transition and duration for each F-key button.</p>
+      <div class="cfg-lbl">CUSTOM TRANSITIONS (F6–F12)</div>
+      <p class="cfg-note">Assign a transition + duration to F6–F12 keys for one-touch transitions.</p>
       <div id="custom-trans-list"></div>
-      <button class="cfg-add-btn" onclick="addCustomTrans()">+ Add Custom Transition</button>
+      <button class="cfg-add-btn" onclick="addCustomTrans()">+ Add Custom Transition Slot</button>
     </div>
     <div class="cfg-section">
-      <div class="cfg-lbl">DISPLAY</div>
-      <div class="cfg-row">
-        <label>Show audio meters</label>
-        <input type="checkbox" id="cfg-audio" checked>
-      </div>
-      <div class="cfg-row">
-        <label>Show replay panel</label>
-        <input type="checkbox" id="cfg-replay" checked>
-      </div>
+      <div class="cfg-lbl">LOWER THIRD FADE</div>
+      <div class="cfg-row"><label>Fade-in duration (ms)</label><input type="number" id="cfg-lt-fade" class="cfg-inp" value="400" min="0" max="2000" step="100"></div>
     </div>
-    <div class="cfg-section">
-      <div class="cfg-lbl">REPLAY</div>
-      <div class="cfg-row">
-        <label>Buffer length (minutes)</label>
-        <input type="number" id="cfg-buf-len" class="cfg-inp" value="60" min="5" max="240">
-      </div>
-    </div>
-    <button class="cfg-save-btn" onclick="saveConfig()">Save Config</button>
+    <button class="cfg-save-btn" onclick="saveConfig()">Save &amp; Apply</button>
   </div>
 </div>
 </div>
@@ -256,7 +235,7 @@
       <option value="white">White</option>
       <option value="custom">Custom colour</option>
     </select>
-    <label>Custom colour</label>
+    <label>Custom colour (if selected above)</label>
     <input type="color" id="col-pick" value="#003366">
     <label>Input name</label>
     <input type="text" id="col-name" placeholder="Black">
@@ -270,9 +249,9 @@
 <!-- LOWER THIRD -->
 <div class="modal-bg" id="lt-modal">
 <div class="modal">
-  <div class="modal-hdr"><span>Lower Third — Overlay</span><button class="modal-x" onclick="closeModal('lt-modal')">✕</button></div>
-  <div class="modal-form active" style="padding:14px;">
-    <p class="yt-note">Lower thirds overlay on top of your output — they don't replace it. Toggle on/off independently.</p>
+  <div class="modal-hdr"><span>Lower Third Overlay</span><button class="modal-x" onclick="closeModal('lt-modal')">✕</button></div>
+  <div class="modal-form active" style="padding:14px;gap:8px;">
+    <p class="yt-note">Lower thirds overlay directly on the monitor video. Apply to Preview or Output independently. They fade in.</p>
     <label>Title text</label>
     <input type="text" id="lt-title" placeholder="John Smith">
     <label>Subtitle text</label>
@@ -300,12 +279,12 @@
       <option value="#000000">Black</option>
       <option value="#ffff00">Yellow</option>
     </select>
-    <div style="display:flex;gap:8px;margin-top:4px;">
+    <div style="display:flex;gap:8px;">
       <button class="modal-add-btn" style="flex:1" onclick="applyLT('prv')">Apply to Preview</button>
-      <button class="modal-add-btn" style="flex:1;background:#cc2200;" onclick="applyLT('pgm')">Apply to Output</button>
+      <button class="modal-add-btn" style="flex:1;background:#880000;" onclick="applyLT('pgm')">Apply to Output</button>
     </div>
-    <button class="modal-add-btn" style="background:#333;margin-top:4px;" onclick="clearLT()">Clear All Lower Thirds</button>
-    <div class="modal-list-hdr" style="margin-top:8px;">Saved lower thirds</div>
+    <button class="modal-add-btn" style="background:#2a2a2a;border:1px solid #555;" onclick="clearLT()">Clear All Lower Thirds</button>
+    <div class="modal-list-hdr" style="margin-top:4px;">Saved lower thirds (click to re-apply)</div>
     <div id="lt-saved-list"></div>
   </div>
 </div>
@@ -317,21 +296,22 @@
   <div class="modal-hdr"><span>Keyboard Shortcuts</span><button class="modal-x" onclick="closeModal('shortcuts-modal')">✕</button></div>
   <table class="sk-table">
     <tr><td class="sk-k">1 – 9</td><td>Send input to Preview</td></tr>
-    <tr><td class="sk-k">Ctrl+1–9</td><td>Cut input direct to Output</td></tr>
+    <tr><td class="sk-k">Ctrl + 1–9</td><td>Cut input direct to Output</td></tr>
     <tr><td class="sk-k">Space</td><td>Cut / Transition (PRV → PGM)</td></tr>
     <tr><td class="sk-k">A</td><td>Auto transition</td></tr>
-    <tr><td class="sk-k">B</td><td>Fade to Black</td></tr>
+    <tr><td class="sk-k">B</td><td>Fade to Black / Up</td></tr>
     <tr><td class="sk-k">F1</td><td>Select: Cut</td></tr>
     <tr><td class="sk-k">F2</td><td>Select: Fade</td></tr>
     <tr><td class="sk-k">F3</td><td>Select: Wipe</td></tr>
     <tr><td class="sk-k">F4</td><td>Select: Slide</td></tr>
     <tr><td class="sk-k">F5</td><td>Select: Zoom</td></tr>
+    <tr><td class="sk-k">F6–F12</td><td>Custom transitions (set in Config)</td></tr>
     <tr><td class="sk-k">I</td><td>Replay: Mark In</td></tr>
     <tr><td class="sk-k">O</td><td>Replay: Mark Out</td></tr>
     <tr><td class="sk-k">P</td><td>Replay: Play</td></tr>
     <tr><td class="sk-k">L</td><td>Replay: Loop</td></tr>
     <tr><td class="sk-k">S</td><td>Replay: Stop</td></tr>
-    <tr><td class="sk-k">R</td><td>Replay: Return Live</td></tr>
+    <tr><td class="sk-k">R</td><td>Replay: Return to Live</td></tr>
     <tr><td class="sk-k">[ / ]</td><td>Speed 0.5x / 1x</td></tr>
     <tr><td class="sk-k">Esc</td><td>Close modal</td></tr>
   </table>

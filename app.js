@@ -1,141 +1,207 @@
 'use strict';
 
-// ─── STATE ───────────────────────────────────────────────────────────────────
+// ─── MEDIA POOL ───────────────────────────────────────────────────────────────
+// One DOM element per input — moved between monitors, never recreated.
+// This prevents video restarts on every preview/program change.
+const pool = new Map(); // inputId -> HTMLElement
+
+function getPoolEl(inp) {
+  if (pool.has(inp.id)) return pool.get(inp.id);
+  const el = buildMediaEl(inp);
+  pool.set(inp.id, el);
+  return el;
+}
+
+function buildMediaEl(inp) {
+  let el;
+  if (inp.type === 'video') {
+    el = document.createElement('video');
+    el.src = inp.src;
+    el.muted = true;
+    el.loop = true;
+    el.playsInline = true;
+    el.setAttribute('playsinline', '');
+    applyFillStyle(el);
+    el.play().catch(() => {});
+  } else if (inp.type === 'still') {
+    el = document.createElement('img');
+    el.src = inp.src;
+    el.alt = inp.name;
+    applyFillStyle(el);
+  } else if (inp.type === 'colour') {
+    el = document.createElement('div');
+    el.className = 'col-' + inp.colType;
+    if (inp.colType === 'custom') el.style.background = inp.customColor;
+    applyFillStyle(el);
+    el.style.display = 'flex';
+    el.style.alignItems = 'center';
+    el.style.justifyContent = 'center';
+    const lbl = document.createElement('span');
+    lbl.textContent = inp.name.toUpperCase();
+    lbl.style.cssText = 'font-size:11px;color:rgba(255,255,255,.2);letter-spacing:.15em;';
+    el.appendChild(lbl);
+  }
+  return el;
+}
+
+function applyFillStyle(el) {
+  el.style.position = 'absolute';
+  el.style.inset = '0';
+  el.style.width = '100%';
+  el.style.height = '100%';
+  el.style.objectFit = 'cover';
+  el.style.display = 'block';
+  el.style.border = 'none';
+}
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
 const S = {
   inputs: [],
-  preview: null,   // id
-  output: null,    // id
-  trans: 'Cut',
+  preview: null,  // input id
+  output:  null,  // input id
+  trans:   'Cut',
   duration: 1000,
-  ftbDur: 500,
-  ftbActive: false,
+  ftbDur:   500,
+  ftbOn:    false,
+  ltFade:   400,
 
-  // replay
-  bufSec: 0,
-  markIn: null,
-  markOut: null,
-  speed: 1.0,
-  replayState: 'idle', // idle | playing | looping
-  replayTimer: null,
+  // replay — based on actual video.currentTime
+  markIn:   null,  // seconds (video.currentTime)
+  markOut:  null,  // seconds (video.currentTime)
+  speed:    1.0,
+  replayState: 'idle',  // idle | playing | looping
+  replayLoop: false,
+  replayEndHandler: null,  // bound timeupdate listener
 
   // lower thirds
-  lts: [],        // saved lower thirds
-  prvLT: null,    // active LT on preview
-  pgmLT: null,    // active LT on program
+  lts: [],       // saved list
+  prvLT: null,
+  pgmLT: null,
 
-  // config
-  customTrans: [], // [{key:'F6', trans:'Fade', dur:500}, ...]
+  // custom transitions
+  customTrans: [], // [{key, trans, dur}]
 
   logCount: 0,
 };
 
-// ─── BOOT ─────────────────────────────────────────────────────────────────────
+// ─── BOOT ────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   setupDurSlider();
-  setupVolSlider();
-  startBuffer();
+  document.getElementById('vol-slider').addEventListener('input', e => {
+    document.getElementById('vol-val').textContent = e.target.value;
+  });
   startStreamTimer();
   startAudioMeters();
+  startVideoTimeClock();
   setupKeyboard();
-  buildCustomTransUI();
 });
 
-// ─── TIMERS ───────────────────────────────────────────────────────────────────
+// ─── TIMERS ──────────────────────────────────────────────────────────────────
 function startStreamTimer() {
   const t0 = Date.now();
   setInterval(() => {
     const e = Math.floor((Date.now() - t0) / 1000);
     document.getElementById('stream-timer').textContent =
-      pad(Math.floor(e/3600)) + ':' + pad(Math.floor((e%3600)/60)) + ':' + pad(e%60);
+      pad2(Math.floor(e/3600)) + ':' + pad2(Math.floor((e%3600)/60)) + ':' + pad2(e%60);
   }, 500);
 }
 
-function startBuffer() {
+// Show program video currentTime as the "video time" / buffer
+function startVideoTimeClock() {
   setInterval(() => {
-    S.bufSec++;
-    document.getElementById('buf-disp').textContent = fmtHMS(S.bufSec);
-  }, 1000);
+    const vid = getPgmVideo();
+    if (vid) {
+      document.getElementById('buf-disp').textContent = fmtTime(vid.currentTime);
+    }
+  }, 200);
 }
 
-function pad(n) { return String(n).padStart(2,'0'); }
-function fmtHMS(s) { return pad(Math.floor(s/3600)) + ':' + pad(Math.floor((s%3600)/60)) + ':' + pad(s%60); }
+function getPgmVideo() {
+  if (!S.output) return null;
+  const inp = S.inputs.find(i => i.id === S.output);
+  if (!inp || inp.type !== 'video') return null;
+  return pool.get(inp.id);
+}
 
-// ─── AUDIO METERS ─────────────────────────────────────────────────────────────
 function startAudioMeters() {
   setInterval(() => {
-    const base = S.output !== null && !S.ftbActive ? 0.55 : 0.02;
+    const base = S.output !== null && !S.ftbOn ? 0.55 : 0.02;
     const l = Math.min(1, base + Math.random() * 0.35);
     const r = Math.min(1, base + Math.random() * 0.35);
-    const ml = document.getElementById('ml');
-    const mr = document.getElementById('mr');
+    const ml = document.getElementById('ml'), mr = document.getElementById('mr');
     if (ml) ml.style.height = Math.round(l * 100) + '%';
     if (mr) mr.style.height = Math.round(r * 100) + '%';
   }, 80);
 }
 
-// ─── ON AIR ───────────────────────────────────────────────────────────────────
+function pad2(n) { return String(n).padStart(2, '0'); }
+function fmtTime(s) {
+  if (s == null || isNaN(s)) return '--:--:--';
+  const sec = Math.floor(s);
+  return pad2(Math.floor(sec/3600)) + ':' + pad2(Math.floor((sec%3600)/60)) + ':' + pad2(sec%60);
+}
+
+// ─── ON AIR ──────────────────────────────────────────────────────────────────
 function setOnAir(live) {
   document.getElementById('onair').classList.toggle('live', live);
 }
 
-// ─── SLIDERS ──────────────────────────────────────────────────────────────────
+// ─── DURATION SLIDER ─────────────────────────────────────────────────────────
 function setupDurSlider() {
   const sl = document.getElementById('dur-slider');
   sl.value = S.duration;
+  document.getElementById('dur-val').textContent = (S.duration / 1000).toFixed(1) + 's';
   sl.addEventListener('input', () => {
     S.duration = parseInt(sl.value);
     document.getElementById('dur-val').textContent = (S.duration / 1000).toFixed(1) + 's';
   });
-  document.getElementById('dur-val').textContent = (S.duration/1000).toFixed(1)+'s';
 }
 
-function setupVolSlider() {
-  const sl = document.getElementById('vol-slider');
-  sl.addEventListener('input', () => {
-    document.getElementById('vol-val').textContent = sl.value;
-  });
-}
-
-// ─── ADD INPUTS ───────────────────────────────────────────────────────────────
+// ─── ADD INPUTS ──────────────────────────────────────────────────────────────
 function addFileInput() {
   const f = document.getElementById('file-pick').files[0];
-  const name = document.getElementById('file-name').value.trim() || (f ? f.name.replace(/\.[^.]+$/,'') : 'Video');
+  const name = document.getElementById('file-name').value.trim() || (f ? stripExt(f.name) : 'Video');
   if (!f) { alert('Select a video file.'); return; }
-  const src = URL.createObjectURL(f);
-  push({ name, type:'video', src });
+  pushInput({ name, type: 'video', src: URL.createObjectURL(f) });
   document.getElementById('file-pick').value = '';
   document.getElementById('file-name').value = '';
-  elog('Input added: ' + name, 'go');
 }
 
 function addStillInput() {
   const f = document.getElementById('still-pick').files[0];
-  const name = document.getElementById('still-name').value.trim() || (f ? f.name.replace(/\.[^.]+$/,'') : 'Still');
+  const name = document.getElementById('still-name').value.trim() || (f ? stripExt(f.name) : 'Still');
   if (!f) { alert('Select an image file.'); return; }
-  const src = URL.createObjectURL(f);
-  push({ name, type:'still', src });
+  pushInput({ name, type: 'still', src: URL.createObjectURL(f) });
   document.getElementById('still-pick').value = '';
   document.getElementById('still-name').value = '';
-  elog('Input added: ' + name, 'go');
 }
 
 function addColourInput() {
   const t = document.getElementById('col-type').value;
   const c = document.getElementById('col-pick').value;
   const name = document.getElementById('col-name').value.trim() || t;
-  push({ name, type:'colour', colType:t, customColor:c });
+  pushInput({ name, type: 'colour', colType: t, customColor: c });
   document.getElementById('col-name').value = '';
-  elog('Input added: ' + name, 'go');
 }
 
-function push(inp) {
+function stripExt(s) { return s.replace(/\.[^.]+$/, ''); }
+
+function pushInput(inp) {
   inp.id = Date.now() + Math.random();
   S.inputs.push(inp);
   renderAll();
   renderModalList();
+  elog('Input added: ' + inp.name, 'go');
 }
 
 function removeInput(id) {
+  // Remove from pool and DOM
+  if (pool.has(id)) {
+    const el = pool.get(id);
+    if (el.parentNode) el.parentNode.removeChild(el);
+    if (el.tagName === 'VIDEO') { el.pause(); el.src = ''; }
+    pool.delete(id);
+  }
   S.inputs = S.inputs.filter(i => i.id !== id);
   if (S.preview === id) { S.preview = null; clearMon('prv'); }
   if (S.output  === id) { S.output  = null; clearMon('pgm'); setOnAir(false); }
@@ -143,7 +209,7 @@ function removeInput(id) {
   renderModalList();
 }
 
-// ─── RENDER ───────────────────────────────────────────────────────────────────
+// ─── RENDER ──────────────────────────────────────────────────────────────────
 function renderAll() {
   renderTiles();
   renderSwitcher();
@@ -151,10 +217,8 @@ function renderAll() {
 
 function renderTiles() {
   const row = document.getElementById('inputs-row');
-  const msg = document.getElementById('no-inp-msg');
-  // remove old tiles
   row.querySelectorAll('.inp-tile').forEach(e => e.remove());
-  msg.style.display = S.inputs.length ? 'none' : '';
+  document.getElementById('no-inp-msg').style.display = S.inputs.length ? 'none' : '';
 
   S.inputs.forEach((inp, i) => {
     const isPrv = inp.id === S.preview;
@@ -162,13 +226,12 @@ function renderTiles() {
     const cls = isPrv ? 'is-prv' : isPgm ? 'is-pgm' : '';
     const badge = isPrv
       ? '<span class="inp-tile-badge badge-prv">PRV</span>'
-      : isPgm
-      ? '<span class="inp-tile-badge badge-pgm">PGM</span>'
-      : '';
+      : isPgm ? '<span class="inp-tile-badge badge-pgm">PGM</span>' : '';
+
     const div = document.createElement('div');
     div.className = 'inp-tile ' + cls;
     div.innerHTML = `
-      <div class="inp-tile-thumb">${tileThumb(inp)}${badge}</div>
+      <div class="inp-tile-thumb">${tileThumbnail(inp)}${badge}</div>
       <div class="inp-tile-bar">
         <span class="inp-tile-name" title="${inp.name}">${inp.name}</span>
         <span class="inp-tile-num">${i+1}</span>
@@ -180,14 +243,15 @@ function renderTiles() {
   });
 }
 
-function tileThumb(inp) {
-  if (inp.type==='video')  return `<video src="${inp.src}" muted loop playsinline preload="metadata"></video>`;
-  if (inp.type==='still')  return `<img src="${inp.src}" alt="${inp.name}">`;
-  if (inp.type==='colour') {
-    if (inp.colType==='bars')   return '<div class="col-bars"></div>';
-    if (inp.colType==='black')  return '<div class="col-black"></div>';
-    if (inp.colType==='white')  return '<div class="col-white"></div>';
-    return `<div class="col-custom" style="background:${inp.customColor};width:100%;height:100%;"></div>`;
+function tileThumbnail(inp) {
+  // Tiles get their own small preview elements (not from the pool)
+  if (inp.type === 'video')  return `<video src="${inp.src}" muted loop playsinline preload="metadata" style="width:100%;height:100%;object-fit:cover;pointer-events:none;"></video>`;
+  if (inp.type === 'still')  return `<img src="${inp.src}" alt="${inp.name}" style="width:100%;height:100%;object-fit:cover;">`;
+  if (inp.type === 'colour') {
+    if (inp.colType === 'bars')   return '<div class="col-bars" style="width:100%;height:100%;"></div>';
+    if (inp.colType === 'black')  return '<div class="col-black" style="width:100%;height:100%;"></div>';
+    if (inp.colType === 'white')  return '<div class="col-white" style="width:100%;height:100%;"></div>';
+    return `<div style="width:100%;height:100%;background:${inp.customColor};"></div>`;
   }
   return '';
 }
@@ -196,7 +260,7 @@ function renderSwitcher() {
   const row = document.getElementById('sw-row');
   if (!S.inputs.length) { row.innerHTML = '<div class="sw-empty">Add inputs above to use the switcher</div>'; return; }
   row.innerHTML = S.inputs.map((inp, i) => {
-    const cls = inp.id===S.preview ? 'sw-prv' : inp.id===S.output ? 'sw-pgm' : '';
+    const cls = inp.id === S.preview ? 'sw-prv' : inp.id === S.output ? 'sw-pgm' : '';
     return `<button class="sw-btn ${cls}" onclick="toProgramDirect(${inp.id})">
       <span>${inp.name}</span>
       <span class="sw-num">${i+1}</span>
@@ -207,188 +271,363 @@ function renderSwitcher() {
 function renderModalList() {
   const list = document.getElementById('modal-inp-list');
   document.getElementById('modal-inp-count').textContent = S.inputs.length;
-  if (!S.inputs.length) { list.innerHTML = '<span style="font-size:10px;color:#555;">No inputs yet.</span>'; return; }
-  list.innerHTML = S.inputs.map((inp,i) => `
+  list.innerHTML = S.inputs.map((inp, i) => `
     <div class="mil-item">
       <span class="mil-num">${i+1}</span>
       <span class="mil-name">${inp.name}</span>
       <span class="mil-type">${inp.type}</span>
       <button class="mil-del" onclick="removeInput(${inp.id})">✕</button>
     </div>
-  `).join('');
+  `).join('') || '<span style="font-size:10px;color:#555;">No inputs yet.</span>';
 }
 
-// ─── MONITOR LOADING ──────────────────────────────────────────────────────────
-function loadMon(which, inp) {
-  const screen = document.getElementById(which + '-screen');
-  const srcEl  = document.getElementById(which + '-src');
+// ─── MONITOR LOADING ─────────────────────────────────────────────────────────
+// Place a pooled element into a monitor's media div.
+// Because we use appendChild to MOVE the element (not clone), video keeps playing.
+function placeMon(which, inp) {
+  const mediaDiv = document.getElementById(which + '-media');
+  const emptyEl  = document.getElementById(which + '-empty');
+  const srcEl    = document.getElementById(which + '-src');
+
   if (!inp) { clearMon(which); return; }
+
   srcEl.textContent = inp.name;
+  emptyEl.style.display = 'none';
+
+  const el = getPoolEl(inp);
+  // appendChild moves the element if it's already in the DOM somewhere else.
+  // This is the key — no re-creation, no restart.
+  mediaDiv.appendChild(el);
 
   if (inp.type === 'video') {
-    const v = document.createElement('video');
-    v.src = inp.src; v.autoplay = true; v.muted = true; v.loop = true; v.playsInline = true;
-    v.style.cssText = 'width:100%;height:100%;object-fit:cover;display:block;';
-    screen.innerHTML = '';
-    screen.appendChild(v);
-    v.play().catch(()=>{});
-  } else if (inp.type === 'still') {
-    screen.innerHTML = `<img src="${inp.src}" alt="${inp.name}" style="width:100%;height:100%;object-fit:cover;display:block;">`;
-  } else if (inp.type === 'colour') {
-    const bg = inp.colType==='bars'
-      ? 'linear-gradient(90deg,#c00,#cc0,#0c0,#0cc,#00c,#c0c,#ccc)'
-      : inp.colType==='black' ? '#000'
-      : inp.colType==='white' ? '#fff'
-      : inp.customColor;
-    screen.innerHTML = `<div style="width:100%;height:100%;background:${bg};display:flex;align-items:center;justify-content:center;"><span style="font-size:11px;color:rgba(255,255,255,.25);letter-spacing:.15em;">${inp.name.toUpperCase()}</span></div>`;
+    el.play().catch(() => {});
   }
-
-  // re-render lower thirds
-  if (which==='prv' && S.prvLT) renderLTonMon('prv', S.prvLT);
-  if (which==='pgm' && S.pgmLT) renderLTonMon('pgm', S.pgmLT);
 }
 
 function clearMon(which) {
-  const screen = document.getElementById(which+'-screen');
-  screen.innerHTML = `<div class="mon-empty">${which==='prv'?'PREVIEW':'OUTPUT'}</div>`;
-  document.getElementById(which+'-src').textContent = '—';
-  document.getElementById(which+'-lt').innerHTML = '';
+  const mediaDiv = document.getElementById(which + '-media');
+  // Don't destroy children — pool elements must survive. Just detach.
+  while (mediaDiv.firstChild) mediaDiv.removeChild(mediaDiv.firstChild);
+  document.getElementById(which + '-empty').style.display = '';
+  document.getElementById(which + '-src').textContent = '—';
+  // clear LT too
+  document.getElementById(which + '-lt').innerHTML = '';
+  if (which === 'prv') S.prvLT = null;
+  if (which === 'pgm') S.pgmLT = null;
 }
 
-// ─── SWITCHING LOGIC ──────────────────────────────────────────────────────────
-// Click tile → goes to Preview
+// ─── SWITCHING ────────────────────────────────────────────────────────────────
+// Tile click → Preview
 function toPreview(id) {
+  // If it's already in program, don't steal it — just note it in preview slot
   S.preview = id;
-  const inp = S.inputs.find(i=>i.id===id);
-  loadMon('prv', inp);
+  const inp = S.inputs.find(i => i.id === id);
+  if (id !== S.output) {
+    placeMon('prv', inp);
+  }
   renderAll();
-  elog('PRV ← ' + inp.name, 'info');
+  elog('PRV ← ' + inp.name);
 }
 
-// Switcher row button → cut direct to Program (vMix behaviour)
+// Switcher row → direct cut to program (vMix behaviour)
 function toProgramDirect(id) {
-  const inp = S.inputs.find(i=>i.id===id);
+  const inp = S.inputs.find(i => i.id === id);
   if (!inp) return;
-  // If already in preview, swap properly
-  if (id === S.preview) {
-    // put old pgm into preview
-    const oldPgm = S.output;
-    S.output = id;
-    S.preview = oldPgm;
-    loadMon('pgm', inp);
-    if (oldPgm) loadMon('prv', S.inputs.find(i=>i.id===oldPgm));
-    else clearMon('prv');
-  } else {
-    // direct cut, don't disturb preview
-    S.output = id;
-    loadMon('pgm', inp);
+
+  const oldPgmId = S.output;
+
+  // Swap: new goes to PGM, old PGM goes to PRV
+  S.output  = id;
+  S.preview = oldPgmId || S.preview;
+
+  placeMon('pgm', inp);
+  if (oldPgmId && oldPgmId !== id) {
+    placeMon('prv', S.inputs.find(i => i.id === oldPgmId));
+  } else if (!oldPgmId) {
+    clearMon('prv');
+    S.preview = null;
   }
+
   setOnAir(true);
   renderAll();
   elog('CUT → PGM: ' + inp.name, 'cut');
 }
 
-// Ctrl+1-9 → same as switcher row (direct to program)
-function directByIndex(idx) {
-  const inp = S.inputs[idx];
-  if (inp) toProgramDirect(inp.id);
-}
-
-// Space / Trans button → send Preview to Program, swap
+// Space / Trans button → send Preview to Program with selected transition
 function doTransition() {
   if (S.preview === null) { elog('Nothing in preview', 'cut'); return; }
-  if (S.ftbActive) { // if FTB is on, just bring up with transition
-    doFTB(); return;
-  }
 
   const prvId = S.preview;
   const pgmId = S.output;
-  const inp = S.inputs.find(i=>i.id===prvId);
+  const inpNext = S.inputs.find(i => i.id === prvId);
+  const inpPrev = pgmId ? S.inputs.find(i => i.id === pgmId) : null;
 
   if (S.trans === 'Cut') {
+    // Instant cut
     S.output  = prvId;
     S.preview = pgmId || null;
-    loadMon('pgm', inp);
-    if (pgmId) loadMon('prv', S.inputs.find(i=>i.id===pgmId));
-    else clearMon('prv');
+    placeMon('pgm', inpNext);
+    if (inpPrev) placeMon('prv', inpPrev); else clearMon('prv');
     setOnAir(true);
-    elog('CUT → PGM: ' + inp.name, 'cut');
+    renderAll();
+    elog('CUT → PGM: ' + inpNext.name, 'cut');
   } else {
-    // animated transition: crossfade PRV over PGM
-    animateTrans(inp, pgmId);
+    doAnimatedTrans(inpNext, inpPrev);
   }
-  renderAll();
 }
 
-function animateTrans(inpNext, oldPgmId) {
+function doAnimatedTrans(inpNext, inpPrev) {
   const pgmScreen = document.getElementById('pgm-screen');
-  // snapshot current pgm as background
-  const snap = pgmScreen.cloneNode(true);
-  snap.style.cssText = 'position:absolute;inset:0;z-index:2;pointer-events:none;';
-  pgmScreen.parentElement.appendChild(snap);
 
-  // load new content into pgm
-  S.output  = inpNext.id;
-  S.preview = oldPgmId || null;
-  loadMon('pgm', inpNext);
-  if (oldPgmId) loadMon('prv', S.inputs.find(i=>i.id===oldPgmId));
-  else clearMon('prv');
+  // 1. Capture current frame as a frozen snapshot (canvas → img)
+  //    This lets us animate the OLD frame out while loading the new one underneath.
+  const snap = buildSnapshot(pgmScreen);
+  snap.style.cssText += `
+    position:absolute;inset:0;width:100%;height:100%;
+    object-fit:cover;z-index:8;pointer-events:none;
+    transition:opacity ${S.duration}ms ease;opacity:1;
+  `;
+  pgmScreen.appendChild(snap);
+
+  // 2. Swap state and load new content into pgm (under the snapshot)
+  const prvId = S.preview;
+  const pgmId = S.output;
+  S.output  = prvId;
+  S.preview = pgmId || null;
+
+  placeMon('pgm', inpNext);
+  if (inpPrev) placeMon('prv', inpPrev); else clearMon('prv');
   setOnAir(true);
-  elog(`${S.trans.toUpperCase()} (${(S.duration/1000).toFixed(1)}s) → PGM: ${inpNext.name}`, 'cut');
+  renderAll();
 
-  // fade out snapshot
-  snap.style.transition = `opacity ${S.duration}ms ease`;
+  // 3. Fade snapshot out, revealing new content underneath
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       snap.style.opacity = '0';
-      setTimeout(() => snap.remove(), S.duration + 50);
+      setTimeout(() => { if (snap.parentNode) snap.parentNode.removeChild(snap); }, S.duration + 100);
     });
   });
-  renderAll();
+
+  elog(`${S.trans.toUpperCase()} (${(S.duration/1000).toFixed(1)}s) → PGM: ${inpNext.name}`, 'cut');
+}
+
+function buildSnapshot(container) {
+  // Try canvas capture for video
+  const vid = container.querySelector('video');
+  if (vid && vid.videoWidth) {
+    try {
+      const c = document.createElement('canvas');
+      c.width = vid.videoWidth; c.height = vid.videoHeight;
+      c.getContext('2d').drawImage(vid, 0, 0);
+      const img = document.createElement('img');
+      img.src = c.toDataURL('image/jpeg', 0.85);
+      return img;
+    } catch(e) {}
+  }
+  // Fallback: clone visible content as a div with solid background
+  const fallback = document.createElement('div');
+  fallback.style.background = '#000';
+  return fallback;
 }
 
 function doAuto() {
   if (S.preview === null) { elog('Nothing in preview', 'cut'); return; }
-  const prevTrans = S.trans;
-  if (S.trans === 'Cut') S.trans = 'Fade'; // auto always uses a transition
+  const savedTrans = S.trans;
+  if (S.trans === 'Cut') S.trans = 'Fade';
   doTransition();
-  S.trans = prevTrans;
+  S.trans = savedTrans;
 }
 
 // ─── FADE TO BLACK ────────────────────────────────────────────────────────────
 function doFTB() {
   const overlay = document.getElementById('ftb-overlay');
-  const dur = S.ftbDur;
-  overlay.style.setProperty('--ftb-dur', dur + 'ms');
+  overlay.style.transition = `opacity ${S.ftbDur}ms ease`;
 
-  if (!S.ftbActive) {
-    // fade to black
-    S.ftbActive = true;
-    overlay.classList.add('ftb-active');
+  S.ftbOn = !S.ftbOn;
+  overlay.classList.toggle('active', S.ftbOn);
+  document.getElementById('ftb-go').classList.toggle('ftb-on', S.ftbOn);
+
+  if (S.ftbOn) {
     setOnAir(false);
-    document.getElementById('ftb-go').style.borderColor = 'var(--red2)';
-    document.getElementById('ftb-go').style.color = 'var(--red2)';
     elog('FADE TO BLACK', 'cut');
   } else {
-    // bring back up
-    S.ftbActive = false;
-    overlay.classList.remove('ftb-active');
     if (S.output) setOnAir(true);
-    document.getElementById('ftb-go').style.borderColor = '';
-    document.getElementById('ftb-go').style.color = '';
-    elog('FADE UP FROM BLACK', 'go');
+    elog('FADE UP', 'go');
   }
 }
 
 // ─── TRANSITION SELECT ────────────────────────────────────────────────────────
 function selTrans(btn) {
   S.trans = btn.dataset.t;
-  document.querySelectorAll('.trans-type-btn').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.trans-type-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   elog('Transition: ' + S.trans);
 }
 
-// ─── LOWER THIRDS ─────────────────────────────────────────────────────────────
+// ─── REPLAY ──────────────────────────────────────────────────────────────────
+// Replay works on the actual video element in program.
+// markIn / markOut store video.currentTime values.
+
+function getPgmVideoForReplay() {
+  const vid = getPgmVideo();
+  if (!vid) { rlog('No video in Output — load a video input first', 'err'); return null; }
+  return vid;
+}
+
+function doMarkIn() {
+  const vid = getPgmVideoForReplay();
+  if (!vid) return;
+  S.markIn = vid.currentTime;
+  document.getElementById('in-disp').textContent = fmtTime(S.markIn);
+  rlog('Mark In @ ' + fmtTime(S.markIn), 'mark');
+  elog('MARK IN @ ' + fmtTime(S.markIn), 'mark');
+  updateReplayStatus();
+}
+
+function doMarkOut() {
+  const vid = getPgmVideoForReplay();
+  if (!vid) return;
+  S.markOut = vid.currentTime;
+  document.getElementById('out-disp').textContent = fmtTime(S.markOut);
+  rlog('Mark Out @ ' + fmtTime(S.markOut), 'mark');
+  elog('MARK OUT @ ' + fmtTime(S.markOut), 'mark');
+  updateReplayStatus();
+}
+
+function doReplayPlay() {
+  const vid = getPgmVideoForReplay();
+  if (!vid) return;
+  if (S.markIn === null)  { rlog('Set Mark In first', 'err'); return; }
+  if (S.markOut === null) { rlog('Set Mark Out first', 'err'); return; }
+  if (S.markOut <= S.markIn) { rlog('Mark Out must be after Mark In', 'err'); return; }
+
+  // Remove any existing listener
+  stopReplayListener(vid);
+
+  S.replayState = 'playing';
+  S.replayLoop  = false;
+
+  // Seek to mark in, set speed
+  vid.playbackRate = S.speed;
+  vid.currentTime = S.markIn;
+
+  // Wait for seek to complete then play
+  const onSeeked = () => {
+    vid.play().catch(() => {});
+    vid.removeEventListener('seeked', onSeeked);
+    // Now add timeupdate watcher
+    attachReplayWatcher(vid, false);
+  };
+  vid.addEventListener('seeked', onSeeked);
+
+  setReplayStatus('playing', `▶ PLAYING  ${fmtTime(S.markIn)} → ${fmtTime(S.markOut)}  @ ${S.speed}x`);
+  rlog(`Play ${fmtTime(S.markIn)} → ${fmtTime(S.markOut)} @ ${S.speed}x`, 'go');
+}
+
+function doReplayLoop() {
+  const vid = getPgmVideoForReplay();
+  if (!vid) return;
+  if (S.markIn === null)  { rlog('Set Mark In first', 'err'); return; }
+  if (S.markOut === null) { rlog('Set Mark Out first', 'err'); return; }
+  if (S.markOut <= S.markIn) { rlog('Mark Out must be after Mark In', 'err'); return; }
+
+  stopReplayListener(vid);
+
+  S.replayState = 'looping';
+  S.replayLoop  = true;
+
+  vid.playbackRate = S.speed;
+  vid.currentTime = S.markIn;
+
+  const onSeeked = () => {
+    vid.play().catch(() => {});
+    vid.removeEventListener('seeked', onSeeked);
+    attachReplayWatcher(vid, true);
+  };
+  vid.addEventListener('seeked', onSeeked);
+
+  setReplayStatus('looping', `⟳ LOOPING  ${fmtTime(S.markIn)} → ${fmtTime(S.markOut)}  @ ${S.speed}x`);
+  rlog(`Loop ${fmtTime(S.markIn)} → ${fmtTime(S.markOut)} @ ${S.speed}x`, 'go');
+}
+
+function attachReplayWatcher(vid, loop) {
+  // Remove previous
+  if (S.replayEndHandler) vid.removeEventListener('timeupdate', S.replayEndHandler);
+
+  S.replayEndHandler = function() {
+    if (vid.currentTime >= S.markOut) {
+      if (loop && S.replayState === 'looping') {
+        // Loop back
+        vid.currentTime = S.markIn;
+      } else {
+        // Stop
+        vid.pause();
+        vid.playbackRate = 1.0;
+        S.replayState = 'idle';
+        setReplayStatus('idle', 'IDLE — replay complete');
+        rlog('Replay complete', 'go');
+        vid.removeEventListener('timeupdate', S.replayEndHandler);
+        S.replayEndHandler = null;
+      }
+    }
+  };
+  vid.addEventListener('timeupdate', S.replayEndHandler);
+}
+
+function stopReplayListener(vid) {
+  if (S.replayEndHandler && vid) {
+    vid.removeEventListener('timeupdate', S.replayEndHandler);
+    S.replayEndHandler = null;
+  }
+}
+
+function doReplayStop() {
+  const vid = getPgmVideo();
+  if (vid) {
+    stopReplayListener(vid);
+    vid.playbackRate = 1.0;
+    vid.play().catch(() => {});
+  }
+  S.replayState = 'idle';
+  S.replayLoop  = false;
+  setReplayStatus('idle', 'IDLE');
+  rlog('Stopped — returned to live speed');
+  elog('REPLAY STOP', 'replay');
+}
+
+function doReturnLive() {
+  doReplayStop();
+  elog('RETURN TO LIVE', 'go');
+}
+
+function setSpeed(v) {
+  S.speed = v;
+  document.getElementById('spd-disp').textContent = v + 'x';
+  document.querySelectorAll('.spd').forEach(b => b.classList.remove('active'));
+  const map = { 0.25: 0, 0.5: 1, 1.0: 2, 2.0: 3 };
+  if (map[v] !== undefined) document.querySelectorAll('.spd')[map[v]].classList.add('active');
+  // Apply immediately if replay is active
+  const vid = getPgmVideo();
+  if (vid && S.replayState !== 'idle') vid.playbackRate = v;
+  elog('Replay speed → ' + v + 'x', 'speed');
+}
+
+function updateReplayStatus() {
+  if (S.markIn !== null && S.markOut !== null) {
+    if (S.replayState === 'idle') {
+      setReplayStatus('idle', `Ready: ${fmtTime(S.markIn)} → ${fmtTime(S.markOut)}  (${(S.markOut-S.markIn).toFixed(1)}s clip)`);
+    }
+  }
+}
+
+function setReplayStatus(state, msg) {
+  S.replayState = state;
+  const bar = document.getElementById('replay-status-bar');
+  bar.textContent = msg;
+  bar.className = 'replay-status-bar ' + (state === 'idle' ? '' : state);
+}
+
+// ─── LOWER THIRDS ────────────────────────────────────────────────────────────
 function applyLT(which) {
   const title = document.getElementById('lt-title').value.trim();
   const sub   = document.getElementById('lt-sub').value.trim();
@@ -399,9 +638,9 @@ function applyLT(which) {
 
   const lt = { title, sub, pos, bg, fg };
 
-  // save to list if not already there
-  const key = title + '|' + sub;
-  if (!S.lts.find(l => l.key===key)) {
+  // Save to list (deduplicate by title+sub)
+  const key = title + '||' + sub;
+  if (!S.lts.find(l => l.key === key)) {
     S.lts.push({ key, ...lt });
     renderLTSavedList();
   }
@@ -409,35 +648,41 @@ function applyLT(which) {
   renderLTonMon(which, lt);
   if (which === 'prv') S.prvLT = lt;
   if (which === 'pgm') S.pgmLT = lt;
-  elog('Lower third → ' + which.toUpperCase() + ': ' + title, 'info');
+  elog('Lower third → ' + which.toUpperCase() + ': ' + title);
 }
 
 function renderLTonMon(which, lt) {
   const container = document.getElementById(which + '-lt');
-  const posClass = lt.pos || 'bottom-left';
-  container.innerHTML = `
-    <div class="lt-overlay ${posClass}">
-      <div class="lt-title-text" style="background:${lt.bg};color:${lt.fg};">${lt.title}</div>
-      ${lt.sub ? `<div class="lt-sub-text" style="color:${lt.fg};">${lt.sub}</div>` : ''}
-    </div>
+  // Remove then re-add to retrigger animation
+  container.innerHTML = '';
+  // Force reflow
+  void container.offsetWidth;
+  const div = document.createElement('div');
+  div.className = 'lt-overlay ' + (lt.pos || 'bottom-left');
+  div.style.setProperty('--lt-fade', S.ltFade + 'ms');
+  div.innerHTML = `
+    <div class="lt-title-text" style="background:${lt.bg};color:${lt.fg};">${lt.title}</div>
+    ${lt.sub ? `<div class="lt-sub-text" style="color:${lt.fg};">${lt.sub}</div>` : ''}
   `;
+  container.appendChild(div);
 }
 
 function clearLT() {
-  S.prvLT = null; S.pgmLT = null;
   document.getElementById('prv-lt').innerHTML = '';
   document.getElementById('pgm-lt').innerHTML = '';
+  S.prvLT = null; S.pgmLT = null;
   elog('Lower thirds cleared');
 }
 
 function renderLTSavedList() {
   const list = document.getElementById('lt-saved-list');
-  if (!S.lts.length) { list.innerHTML = '<span style="font-size:10px;color:#555;">No saved lower thirds.</span>'; return; }
-  list.innerHTML = S.lts.map((lt,i) => `
+  if (!S.lts.length) { list.innerHTML = '<span style="font-size:10px;color:#555;padding:4px 0;display:block;">No saved lower thirds.</span>'; return; }
+  list.innerHTML = S.lts.map((lt, i) => `
     <div class="lt-saved-item">
-      <span class="lt-si-name">${lt.title}${lt.sub?' — '+lt.sub:''}</span>
+      <div class="lt-si-dot" style="background:${lt.bg};"></div>
+      <span class="lt-si-name">${lt.title}${lt.sub ? ' — ' + lt.sub : ''}</span>
       <button class="lt-si-apply" onclick="applyLTSaved(${i},'prv')">PRV</button>
-      <button class="lt-si-apply" onclick="applyLTSaved(${i},'pgm')">PGM</button>
+      <button class="lt-si-apply pgm" onclick="applyLTSaved(${i},'pgm')">PGM</button>
       <button class="lt-si-del" onclick="deleteLTSaved(${i})">✕</button>
     </div>
   `).join('');
@@ -446,9 +691,9 @@ function renderLTSavedList() {
 function applyLTSaved(i, which) {
   const lt = S.lts[i];
   renderLTonMon(which, lt);
-  if (which==='prv') S.prvLT = lt;
-  if (which==='pgm') S.pgmLT = lt;
-  elog('Lower third → ' + which.toUpperCase() + ': ' + lt.title, 'info');
+  if (which === 'prv') S.prvLT = lt;
+  if (which === 'pgm') S.pgmLT = lt;
+  elog('Lower third → ' + which.toUpperCase() + ': ' + lt.title);
 }
 
 function deleteLTSaved(i) {
@@ -456,90 +701,13 @@ function deleteLTSaved(i) {
   renderLTSavedList();
 }
 
-// ─── REPLAY ───────────────────────────────────────────────────────────────────
-function setReplayStatus(state, msg) {
-  S.replayState = state;
-  const bar = document.getElementById('replay-status-bar');
-  bar.textContent = msg;
-  bar.className = 'replay-status-bar ' + (state === 'idle' ? '' : state === 'playing' ? 'playing' : state === 'looping' ? 'looping' : '');
-}
-
-function doMarkIn() {
-  S.markIn = S.bufSec;
-  document.getElementById('in-disp').textContent = fmtHMS(S.markIn);
-  rlog('Mark In @ ' + fmtHMS(S.markIn), 'mark');
-}
-
-function doMarkOut() {
-  S.markOut = S.bufSec;
-  document.getElementById('out-disp').textContent = fmtHMS(S.markOut);
-  rlog('Mark Out @ ' + fmtHMS(S.markOut), 'mark');
-}
-
-function doReplayPlay() {
-  if (S.markIn === null) { rlog('Set Mark In first', 'err'); return; }
-  if (S.markOut === null) { rlog('Set Mark Out first', 'err'); return; }
-  if (S.markOut <= S.markIn) { rlog('Mark Out must be after Mark In', 'err'); return; }
-
-  clearTimeout(S.replayTimer);
-  S.replayState = 'playing';
-  const clipLen = (S.markOut - S.markIn) / S.speed;
-  setReplayStatus('playing', `▶ PLAYING  ${fmtHMS(S.markIn)} → ${fmtHMS(S.markOut)}  @ ${S.speed}x`);
-  rlog(`Play ${fmtHMS(S.markIn)}→${fmtHMS(S.markOut)} @ ${S.speed}x`, 'go');
-
-  S.replayTimer = setTimeout(() => {
-    if (S.replayState === 'playing') {
-      setReplayStatus('idle', 'IDLE — replay complete');
-      rlog('Replay complete', 'go');
-    }
-  }, clipLen * 1000);
-}
-
-function doReplayLoop() {
-  if (S.markIn === null || S.markOut === null) { rlog('Set Mark In and Out first', 'err'); return; }
-  if (S.markOut <= S.markIn) { rlog('Mark Out must be after Mark In', 'err'); return; }
-  S.replayState = 'looping';
-  setReplayStatus('looping', `⟳ LOOPING  ${fmtHMS(S.markIn)} → ${fmtHMS(S.markOut)}  @ ${S.speed}x`);
-  rlog(`Loop ${fmtHMS(S.markIn)}→${fmtHMS(S.markOut)} @ ${S.speed}x`, 'go');
-  clearTimeout(S.replayTimer);
-}
-
-function doReplayStop() {
-  clearTimeout(S.replayTimer);
-  S.replayState = 'idle';
-  setReplayStatus('idle', 'IDLE');
-  rlog('Stopped', null);
-}
-
-function doReturnLive() {
-  doReplayStop();
-  rlog('Return to live', 'go');
-  elog('RETURN TO LIVE', 'go');
-}
-
-function setSpeed(v) {
-  S.speed = v;
-  document.getElementById('spd-disp').textContent = v.toFixed(2).replace(/\.?0+$/,'') + 'x';
-  document.querySelectorAll('.spd').forEach(b=>b.classList.remove('active'));
-  const map = {0.25:0, 0.5:1, 1.0:2, 2.0:3};
-  const idx = map[v];
-  if (idx !== undefined) document.querySelectorAll('.spd')[idx].classList.add('active');
-  rlog('Speed → ' + v + 'x', null);
-  elog('Replay speed → ' + v + 'x', 'speed');
-}
-
-// ─── CONFIG ───────────────────────────────────────────────────────────────────
-let customTransCount = 0;
-const customTransRows = []; // [{key, trans, dur}]
-
-function buildCustomTransUI() {
-  // F6 onward available for custom
-}
+// ─── CONFIG ──────────────────────────────────────────────────────────────────
+const customTransRows = [];
 
 function addCustomTrans() {
   const idx = customTransRows.length;
   const fKey = 'F' + (6 + idx);
-  if (6 + idx > 12) { alert('Maximum 7 custom transitions (F6–F12)'); return; }
+  if (6 + idx > 12) { alert('Maximum 7 custom transition slots (F6–F12)'); return; }
   customTransRows.push({ key: fKey, trans: 'Fade', dur: 1000 });
   renderCustomTransList();
 }
@@ -550,9 +718,12 @@ function renderCustomTransList() {
     <div class="custom-trans-row">
       <span class="ct-key">${row.key}</span>
       <select onchange="customTransRows[${i}].trans=this.value">
-        ${['Cut','Fade','Wipe','Slide','Zoom'].map(t=>`<option${t===row.trans?' selected':''}>${t}</option>`).join('')}
+        ${['Cut','Fade','Wipe','Slide','Zoom'].map(t =>
+          `<option${t === row.trans ? ' selected' : ''}>${t}</option>`
+        ).join('')}
       </select>
-      <input type="number" value="${row.dur}" min="100" max="5000" step="100" style="width:70px;" onchange="customTransRows[${i}].dur=parseInt(this.value)">
+      <input type="number" value="${row.dur}" min="100" max="5000" step="100" style="width:70px;"
+        onchange="customTransRows[${i}].dur=parseInt(this.value)">
       <span style="font-size:9px;color:var(--text3);">ms</span>
       <button onclick="removeCustomTrans(${i})">✕</button>
     </div>
@@ -565,42 +736,44 @@ function removeCustomTrans(i) {
 }
 
 function saveConfig() {
-  const dt = document.getElementById('cfg-default-trans').value;
-  const dd = parseInt(document.getElementById('cfg-default-dur').value) || 1000;
-  const fd = parseInt(document.getElementById('cfg-ftb-dur').value) || 500;
+  const dt  = document.getElementById('cfg-default-trans').value;
+  const dd  = parseInt(document.getElementById('cfg-default-dur').value) || 1000;
+  const fd  = parseInt(document.getElementById('cfg-ftb-dur').value) || 500;
+  const ltf = parseInt(document.getElementById('cfg-lt-fade').value) ?? 400;
 
-  S.trans = dt;
+  S.trans    = dt;
   S.duration = dd;
-  S.ftbDur = fd;
+  S.ftbDur   = fd;
+  S.ltFade   = ltf;
 
-  // sync duration slider
+  // Sync slider
   const sl = document.getElementById('dur-slider');
   sl.value = dd;
-  document.getElementById('dur-val').textContent = (dd/1000).toFixed(1)+'s';
+  document.getElementById('dur-val').textContent = (dd/1000).toFixed(1) + 's';
 
-  // sync trans buttons
+  // Sync trans buttons
   const btn = document.querySelector(`.trans-type-btn[data-t="${dt}"]`);
-  if (btn) { document.querySelectorAll('.trans-type-btn').forEach(b=>b.classList.remove('active')); btn.classList.add('active'); }
+  if (btn) { document.querySelectorAll('.trans-type-btn').forEach(b => b.classList.remove('active')); btn.classList.add('active'); }
 
+  // Save custom trans
   S.customTrans = customTransRows.map(r => ({...r}));
 
   closeModal('config-modal');
   elog('Config saved', 'go');
 }
 
-// ─── LOGS ─────────────────────────────────────────────────────────────────────
+// ─── LOGS ────────────────────────────────────────────────────────────────────
 function elog(msg, type) {
   const body = document.getElementById('log-body');
-  const empty = body.querySelector('.log-empty');
-  if (empty) empty.remove();
+  body.querySelector('.log-empty')?.remove();
   S.logCount++;
-  const ts = new Date().toTimeString().slice(0,8);
+  const ts = new Date().toTimeString().slice(0, 8);
   const div = document.createElement('div');
   div.className = 'log-entry';
   div.innerHTML = `<span class="log-ts">${ts}</span><span class="log-msg ${type||''}">${msg}</span>`;
   body.appendChild(div);
   body.scrollLeft = body.scrollWidth;
-  document.getElementById('log-cnt').textContent = S.logCount + ' event' + (S.logCount!==1?'s':'');
+  document.getElementById('log-cnt').textContent = S.logCount + ' event' + (S.logCount !== 1 ? 's' : '');
 }
 
 function clearLog() {
@@ -611,7 +784,7 @@ function clearLog() {
 
 function rlog(msg, type) {
   const log = document.getElementById('replay-log');
-  const ts = new Date().toTimeString().slice(0,8);
+  const ts  = new Date().toTimeString().slice(0, 8);
   const div = document.createElement('div');
   div.className = 'rl-entry';
   div.innerHTML = `<span class="rl-ts">${ts} </span><span class="rl-msg ${type||''}">${msg}</span>`;
@@ -619,7 +792,7 @@ function rlog(msg, type) {
   log.scrollTop = log.scrollHeight;
 }
 
-// ─── MODALS ───────────────────────────────────────────────────────────────────
+// ─── MODALS ──────────────────────────────────────────────────────────────────
 function openModal(id) {
   document.getElementById(id).classList.add('open');
   if (id === 'lt-modal') renderLTSavedList();
@@ -630,38 +803,38 @@ document.addEventListener('click', e => {
 });
 
 function switchMTab(tab, btn) {
-  document.querySelectorAll('.mtab').forEach(b=>b.classList.remove('active'));
-  document.querySelectorAll('.modal-form').forEach(f=>f.classList.remove('active'));
+  document.querySelectorAll('.mtab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.modal-form').forEach(f => f.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('mf-' + tab).classList.add('active');
 }
 
-// ─── KEYBOARD ─────────────────────────────────────────────────────────────────
+// ─── KEYBOARD ────────────────────────────────────────────────────────────────
 function setupKeyboard() {
   document.addEventListener('keydown', e => {
     const tag = document.activeElement?.tagName;
-    if (tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA') return;
-    // don't block browser shortcuts
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
     if (e.metaKey) return;
 
     const k = e.key;
 
-    // 1-9 → preview
+    // 1–9 → Preview
     if (/^[1-9]$/.test(k) && !e.ctrlKey && !e.shiftKey && !e.altKey) {
       e.preventDefault();
-      const inp = S.inputs[parseInt(k)-1];
+      const inp = S.inputs[parseInt(k) - 1];
       if (inp) toPreview(inp.id);
       return;
     }
 
-    // Ctrl+1-9 → direct to program (like vMix ctrl shortcuts)
+    // Ctrl+1–9 → direct to Output
     if (/^[1-9]$/.test(k) && e.ctrlKey) {
       e.preventDefault();
-      directByIndex(parseInt(k)-1);
+      const inp = S.inputs[parseInt(k) - 1];
+      if (inp) toProgramDirect(inp.id);
       return;
     }
 
-    // F1-F5 → transition type
+    // F1–F5 → transition type
     const fMap = { F1:'Cut', F2:'Fade', F3:'Wipe', F4:'Slide', F5:'Zoom' };
     if (fMap[k]) {
       e.preventDefault();
@@ -670,20 +843,22 @@ function setupKeyboard() {
       return;
     }
 
-    // Custom F-key transitions (F6+)
-    const customIdx = parseInt(k.replace('F','')) - 6;
-    if (k.startsWith('F') && !isNaN(customIdx) && customIdx >= 0 && S.customTrans[customIdx]) {
+    // F6–F12 → custom transitions
+    const fNum = parseInt(k.replace('F', ''));
+    if (k.startsWith('F') && !isNaN(fNum) && fNum >= 6 && fNum <= 12) {
       e.preventDefault();
-      const ct = S.customTrans[customIdx];
-      const prevTrans = S.trans, prevDur = S.duration;
-      S.trans = ct.trans; S.duration = ct.dur;
-      doTransition();
-      S.trans = prevTrans; S.duration = prevDur;
+      const ct = S.customTrans[fNum - 6];
+      if (ct && S.preview !== null) {
+        const savedTrans = S.trans, savedDur = S.duration;
+        S.trans = ct.trans; S.duration = ct.dur;
+        doTransition();
+        S.trans = savedTrans; S.duration = savedDur;
+      }
       return;
     }
 
-    switch(k) {
-      case ' ':         e.preventDefault(); doTransition(); break;
+    switch (k) {
+      case ' ':           e.preventDefault(); doTransition(); break;
       case 'a': case 'A': doAuto(); break;
       case 'b': case 'B': doFTB(); break;
       case 'i': case 'I': doMarkIn(); break;
@@ -692,10 +867,10 @@ function setupKeyboard() {
       case 'l': case 'L': doReplayLoop(); break;
       case 's': case 'S': doReplayStop(); break;
       case 'r': case 'R': doReturnLive(); break;
-      case '[':           setSpeed(0.5); break;
-      case ']':           setSpeed(1.0); break;
+      case '[':            setSpeed(0.5); break;
+      case ']':            setSpeed(1.0); break;
       case 'Escape':
-        document.querySelectorAll('.modal-bg.open').forEach(m=>m.classList.remove('open'));
+        document.querySelectorAll('.modal-bg.open').forEach(m => m.classList.remove('open'));
         break;
     }
   });
