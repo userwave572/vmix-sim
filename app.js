@@ -1,473 +1,566 @@
 // ─── STATE ───────────────────────────────────────────────────────────────────
-const state = {
-  inputs: [],          // { id, name, type, src, thumbType }
-  preview: null,       // input id
-  output: null,        // input id
+const S = {
+  inputs: [],
+  preview: null,
+  output: null,
   transition: 'cut',
   duration: 500,
-  bufferSec: 0,
+  bufSec: 0,
   markIn: null,
   markOut: null,
-  replaySpeed: 1,
+  speed: 1,
   replayActive: false,
   looping: false,
-  streamStart: null,
-  logEntries: [],
   logCount: 0,
+  overlayData: null,      // { title, subtitle, position, bg }
+  pgmOverlay: null,
 };
 
-let bufferInterval = null;
-let streamTimerInterval = null;
-
-// ─── INIT ─────────────────────────────────────────────────────────────────────
+// ─── BOOT ─────────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
-  renderDeck();
-  renderScenes();
+  setupDurSlider();
+  setupVolSlider();
+  setupAudioMeters();
   startBuffer();
   startStreamTimer();
   setupKeyboard();
-  document.getElementById('dur-slider').addEventListener('input', e => {
-    state.duration = parseInt(e.target.value);
-    document.getElementById('dur-val').textContent = (state.duration / 1000).toFixed(1) + 's';
-  });
-  renderInputsPanel();
-  renderInputsList();
+  buildStreamDeckMap();
 });
 
-// ─── INPUTS ───────────────────────────────────────────────────────────────────
-function addYouTubeInput() {
-  const rawUrl = document.getElementById('yt-url').value.trim();
-  const name = document.getElementById('yt-name').value.trim() || 'YouTube Input';
-  if (!rawUrl) return alert('Enter a YouTube URL.');
-  const embedUrl = toYouTubeEmbed(rawUrl);
-  if (!embedUrl) return alert('Could not parse YouTube URL. Try a standard watch or youtu.be link.');
-  const inp = { id: Date.now(), name, type: 'youtube', src: embedUrl };
-  state.inputs.push(inp);
-  renderInputsPanel();
-  renderInputsList();
-  document.getElementById('yt-url').value = '';
-  document.getElementById('yt-name').value = '';
-  addLog('Input added: ' + name, 'info');
+// ─── DURATION SLIDER ─────────────────────────────────────────────────────────
+function setupDurSlider() {
+  const sl = document.getElementById('dur-slider');
+  sl.addEventListener('input', () => {
+    S.duration = parseInt(sl.value);
+    document.getElementById('dur-val').textContent = (S.duration / 1000).toFixed(1) + 's';
+  });
 }
 
-function toYouTubeEmbed(url) {
-  let vid = null;
-  try {
-    const u = new URL(url);
-    if (u.hostname.includes('youtu.be')) {
-      vid = u.pathname.slice(1);
-    } else if (u.hostname.includes('youtube.com')) {
-      vid = u.searchParams.get('v');
-      if (!vid && u.pathname.includes('/embed/')) vid = u.pathname.split('/embed/')[1].split('/')[0];
-    }
-  } catch(e) {}
-  if (!vid) return null;
-  return `https://www.youtube.com/embed/${vid}?autoplay=1&mute=1&controls=0&loop=1&playlist=${vid}&enablejsapi=1`;
+// ─── VOL SLIDER ──────────────────────────────────────────────────────────────
+function setupVolSlider() {
+  const sl = document.getElementById('vol-slider');
+  sl.addEventListener('input', () => {
+    document.getElementById('vol-val').textContent = sl.value + '%';
+  });
 }
 
-function addFileInput() {
-  const fileEl = document.getElementById('file-input');
-  const name = document.getElementById('file-name').value.trim() || 'Local Video';
-  if (!fileEl.files[0]) return alert('Select a video file.');
-  const url = URL.createObjectURL(fileEl.files[0]);
-  const inp = { id: Date.now(), name, type: 'video', src: url };
-  state.inputs.push(inp);
-  renderInputsPanel();
-  renderInputsList();
-  fileEl.value = '';
-  document.getElementById('file-name').value = '';
-  addLog('Input added: ' + name, 'info');
+// ─── AUDIO METERS (simulated) ─────────────────────────────────────────────────
+function setupAudioMeters() {
+  setInterval(() => {
+    const base = S.output !== null ? 0.6 : 0.05;
+    const l = Math.min(1, base + (Math.random() * 0.3));
+    const r = Math.min(1, base + (Math.random() * 0.3));
+    document.getElementById('meter-l').style.height = Math.round(l * 100) + '%';
+    document.getElementById('meter-r').style.height = Math.round(r * 100) + '%';
+  }, 80);
 }
 
-function addColorInput() {
-  const type = document.getElementById('color-type').value;
-  const name = document.getElementById('color-name').value.trim() || type;
-  const inp = { id: Date.now(), name, type: 'color', thumbType: type };
-  state.inputs.push(inp);
-  renderInputsPanel();
-  renderInputsList();
-  document.getElementById('color-name').value = '';
-  addLog('Input added: ' + name, 'info');
-}
-
-function removeInput(id) {
-  state.inputs = state.inputs.filter(i => i.id !== id);
-  if (state.preview === id) { state.preview = null; clearMonitor('preview'); }
-  if (state.output === id) { state.output = null; clearMonitor('output'); }
-  renderInputsPanel();
-  renderInputsList();
-}
-
-function renderInputsPanel() {
-  const grid = document.getElementById('input-grid');
-  const empty = document.getElementById('input-empty');
-  const count = document.getElementById('input-count');
-  count.textContent = state.inputs.length;
-
-  if (!state.inputs.length) {
-    empty.style.display = 'flex';
-    grid.innerHTML = '';
-    grid.appendChild(empty);
-    return;
-  }
-  empty.style.display = 'none';
-
-  grid.innerHTML = state.inputs.map((inp, i) => {
-    const isPreview = inp.id === state.preview;
-    const isOutput = inp.id === state.output;
-    const cls = isPreview ? 'in-preview' : isOutput ? 'in-output' : '';
-    const badge = isPreview
-      ? '<span class="tile-badge badge-prv">PRV</span>'
-      : isOutput
-      ? '<span class="tile-badge badge-pgm">PGM</span>'
-      : '';
-    const thumb = thumbHTML(inp);
-
-    return `
-      <div class="input-tile ${cls}" onclick="selectInput(${inp.id})">
-        <div class="input-tile-thumb">
-          ${thumb}
-          ${badge}
-        </div>
-        <div class="input-tile-info">
-          <span class="input-tile-name">${inp.name}</span>
-          <span class="input-tile-num">${i + 1}</span>
-        </div>
-        <button class="input-tile-remove" onclick="event.stopPropagation(); removeInput(${inp.id})">✕</button>
-      </div>
-    `;
-  }).join('');
-}
-
-function thumbHTML(inp) {
-  if (inp.type === 'youtube') {
-    return `<iframe src="${inp.src}" allow="autoplay" allowfullscreen loading="lazy"></iframe>`;
-  }
-  if (inp.type === 'video') {
-    return `<video src="${inp.src}" autoplay muted loop playsinline></video>`;
-  }
-  if (inp.type === 'color') {
-    const cls = 'thumb-' + (inp.thumbType || 'black');
-    return `<div class="thumb-overlay ${cls}" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
-      <span style="font-family:monospace;font-size:9px;color:rgba(255,255,255,0.5);letter-spacing:0.1em;">${inp.thumbType?.toUpperCase() || ''}</span>
-    </div>`;
-  }
-  return '';
-}
-
-function renderInputsList() {
-  const list = document.getElementById('inputs-list');
-  const cnt = document.getElementById('inputs-list-count');
-  cnt.textContent = state.inputs.length;
-  list.innerHTML = state.inputs.map((inp, i) => `
-    <div class="inputs-list-item">
-      <div class="ili-left">
-        <span class="ili-num">${i + 1}</span>
-        <span class="ili-name">${inp.name}</span>
-        <span class="ili-type">${inp.type}</span>
-      </div>
-      <button class="ili-del" onclick="removeInput(${inp.id})">✕</button>
-    </div>
-  `).join('') || '<div style="color:var(--text3);font-size:12px;padding:8px 0;">No inputs yet.</div>';
-}
-
-// ─── SWITCHING ────────────────────────────────────────────────────────────────
-function selectInput(id) {
-  if (id === state.output) return;
-  state.preview = id;
-  const inp = state.inputs.find(i => i.id === id);
-  loadMonitor('preview', inp);
-  renderInputsPanel();
-  addLog('PRV → ' + inp.name, 'info');
-}
-
-function selectInputDirect(id) {
-  const inp = state.inputs.find(i => i.id === id);
-  if (!inp) return;
-  state.output = id;
-  if (state.preview === id) state.preview = null;
-  loadMonitor('output', inp);
-  renderInputsPanel();
-  setOnAir(true);
-  addLog('CUT (direct) → PGM: ' + inp.name, 'cut');
-}
-
-function doTransition() {
-  if (state.preview === null) return;
-  const prevOutId = state.output;
-  const prevInId = state.preview;
-
-  state.output = prevInId;
-  state.preview = prevOutId;
-
-  const inp = state.inputs.find(i => i.id === state.output);
-  const prevOut = prevOutId ? state.inputs.find(i => i.id === prevOutId) : null;
-
-  loadMonitor('output', inp);
-  if (prevOut) loadMonitor('preview', prevOut);
-  else clearMonitor('preview');
-
-  renderInputsPanel();
-  setOnAir(true);
-
-  if (state.transition !== 'cut') {
-    const overlay = document.getElementById('trans-overlay');
-    overlay.className = 'fade';
-    setTimeout(() => overlay.className = '', state.duration);
-  }
-
-  addLog(`${state.transition.toUpperCase()} → PGM: ${inp.name}${state.transition !== 'cut' ? ' (' + (state.duration/1000).toFixed(1) + 's)' : ''}`, 'cut');
-}
-
-function doAuto() {
-  const prev = state.transition;
-  if (state.transition === 'cut') state.transition = 'fade';
-  doTransition();
-  state.transition = prev;
-  addLog('AUTO transition executed', 'info');
-}
-
-function loadMonitor(which, inp) {
-  const screen = document.getElementById(which + '-screen');
-  const nameEl = document.getElementById(which + '-name');
-  if (!inp) { clearMonitor(which); return; }
-  nameEl.textContent = inp.name;
-
-  if (inp.type === 'youtube') {
-    screen.innerHTML = `<iframe src="${inp.src}" allow="autoplay; encrypted-media" allowfullscreen style="width:100%;height:100%;border:none;"></iframe>`;
-  } else if (inp.type === 'video') {
-    screen.innerHTML = `<video src="${inp.src}" autoplay muted loop playsinline style="width:100%;height:100%;object-fit:cover;"></video>`;
-  } else if (inp.type === 'color') {
-    const bg = { bars: 'linear-gradient(90deg,#f00,#ff0,#0f0,#0ff,#00f,#f0f,#fff)', black: '#000', scorebug: '#111', lowerthird: '#111', titles: '#111' };
-    screen.innerHTML = `<div style="width:100%;height:100%;background:${bg[inp.thumbType]||'#111'};display:flex;align-items:center;justify-content:center;">
-      <span style="font-family:monospace;font-size:14px;color:rgba(255,255,255,0.4);letter-spacing:0.15em;">${inp.name.toUpperCase()}</span>
-    </div>`;
-  }
-}
-
-function clearMonitor(which) {
-  document.getElementById(which + '-screen').innerHTML = `<div class="monitor-placeholder"><span class="placeholder-text">${which === 'preview' ? 'PREVIEW' : 'PROGRAM'}</span></div>`;
-  document.getElementById(which + '-name').textContent = '—';
-}
-
-function setTrans(btn) {
-  state.transition = btn.dataset.trans;
-  document.querySelectorAll('.trans-type').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
-}
-
-// ─── STREAM TIMER & ON AIR ────────────────────────────────────────────────────
+// ─── STREAM TIMER ─────────────────────────────────────────────────────────────
 function startStreamTimer() {
-  state.streamStart = Date.now();
-  streamTimerInterval = setInterval(() => {
-    const elapsed = Math.floor((Date.now() - state.streamStart) / 1000);
-    const h = String(Math.floor(elapsed / 3600)).padStart(2, '0');
-    const m = String(Math.floor((elapsed % 3600) / 60)).padStart(2, '0');
-    const s = String(elapsed % 60).padStart(2, '0');
+  const start = Date.now();
+  setInterval(() => {
+    const e = Math.floor((Date.now() - start) / 1000);
+    const h = String(Math.floor(e / 3600)).padStart(2, '0');
+    const m = String(Math.floor((e % 3600) / 60)).padStart(2, '0');
+    const s = String(e % 60).padStart(2, '0');
     document.getElementById('stream-timer').textContent = `${h}:${m}:${s}`;
   }, 1000);
 }
 
-function setOnAir(live) {
-  const dot = document.getElementById('on-air-dot');
-  const lbl = document.getElementById('on-air-label');
-  if (live) { dot.classList.add('live'); lbl.classList.add('live'); lbl.textContent = 'ON AIR'; }
-  else { dot.classList.remove('live'); lbl.classList.remove('live'); lbl.textContent = 'STANDBY'; }
-}
-
-// ─── BUFFER / REPLAY ──────────────────────────────────────────────────────────
+// ─── BUFFER ───────────────────────────────────────────────────────────────────
 function startBuffer() {
-  bufferInterval = setInterval(() => {
-    state.bufferSec++;
-    document.getElementById('buf-time').textContent = fmtSec(state.bufferSec);
+  setInterval(() => {
+    S.bufSec++;
+    document.getElementById('buf-disp').textContent = fmt(S.bufSec);
   }, 1000);
 }
-
-function fmtSec(s) {
+function fmt(s) {
   return String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0');
 }
 
-const deckConfig = [
-  { label: 'MARK IN', cls: 'mark', key: 'I', action: 'markIn', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><line x1="12" y1="2" x2="12" y2="6"/></svg>` },
-  { label: 'MARK OUT', cls: 'mark', key: 'O', action: 'markOut', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="6"/><line x1="12" y1="18" x2="12" y2="22"/></svg>` },
-  { label: 'PLAY', cls: 'go', key: 'P', action: 'playReplay', icon: `<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="5,3 19,12 5,21"/></svg>` },
-  { label: 'LOOP', cls: 'go', key: 'L', action: 'loopReplay', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17,1 21,5 17,9"/><path d="M3,11V9a4,4,0,0,1,4-4h14"/><polyline points="7,23 3,19 7,15"/><path d="M21,13v2a4,4,0,0,1-4,4H3"/></svg>` },
-  { label: 'STOP', cls: 'replay', key: null, action: 'stopReplay', icon: `<svg viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16"/></svg>` },
-  { label: '0.25x', cls: 'speed', key: null, action: 'speed025', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>` },
-  { label: '0.5x', cls: 'speed', key: '[', action: 'speed05', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>` },
-  { label: '1x', cls: 'speed', key: ']', action: 'speed1', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12,6 12,12 16,14"/></svg>` },
-  { label: 'CAM A', cls: 'replay', key: null, action: 'camA', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="15" height="10" rx="2"/><polygon points="17,9 22,6 22,18 17,15"/></svg>` },
-  { label: 'CAM B', cls: 'replay', key: null, action: 'camB', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="15" height="10" rx="2"/><polygon points="17,9 22,6 22,18 17,15"/></svg>` },
-  { label: '–5s', cls: 'replay', key: null, action: 'jumpBack', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1,4 1,10 7,10"/><path d="M3.5,15a9,9,0,1,0,.5-3"/></svg>` },
-  { label: '+5s', cls: 'replay', key: null, action: 'jumpFwd', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23,4 23,10 17,10"/><path d="M20.5,15a9,9,0,1,1-.5-3"/></svg>` },
-  { label: 'TO AIR', cls: 'go', key: null, action: 'takeAir', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1,6 Q12,1 23,6"/><path d="M5,10 Q12,6 19,10"/><circle cx="12" cy="14" r="2"/><line x1="12" y1="16" x2="12" y2="22"/></svg>` },
-  { label: 'LIVE', cls: 'go', key: 'R', action: 'returnLive', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M20.2,7.8a8,8,0,0,1,0,8.4M3.8,7.8a8,8,0,0,0,0,8.4"/></svg>` },
-  { label: '', cls: 'blank', key: null, action: null, icon: '' },
-];
+// ─── ON AIR ───────────────────────────────────────────────────────────────────
+function setOnAir(live) {
+  document.getElementById('onair-btn').classList.toggle('live', live);
+  const sv = document.getElementById('status-val');
+  sv.textContent = live ? 'ON AIR' : 'STANDBY';
+  sv.classList.toggle('live', live);
+}
 
-const deckActions = {
-  markIn: () => {
-    state.markIn = state.bufferSec;
-    document.getElementById('mark-in-disp').textContent = fmtSec(state.markIn);
-    document.getElementById('mark-in-disp').classList.add('active');
-    addLog('MARK IN @ ' + fmtSec(state.markIn), 'mark');
-  },
-  markOut: () => {
-    state.markOut = state.bufferSec;
-    document.getElementById('mark-out-disp').textContent = fmtSec(state.markOut);
-    document.getElementById('mark-out-disp').classList.add('active');
-    addLog('MARK OUT @ ' + fmtSec(state.markOut), 'mark');
-  },
-  playReplay: () => {
-    if (state.markIn === null || state.markOut === null) { addLog('Set mark in/out first', 'cut'); return; }
-    state.replayActive = true;
-    addLog(`PLAY replay ${fmtSec(state.markIn)}→${fmtSec(state.markOut)} @ ${state.replaySpeed}x`, 'replay');
-    const dur = Math.abs(state.markOut - state.markIn) / state.replaySpeed;
-    setTimeout(() => { if (state.replayActive && !state.looping) { state.replayActive = false; addLog('Replay complete', 'info'); } }, dur * 1000);
-  },
-  loopReplay: () => {
-    state.looping = true; state.replayActive = true;
-    addLog(`LOOP replay @ ${state.replaySpeed}x`, 'replay');
-  },
-  stopReplay: () => {
-    state.replayActive = false; state.looping = false;
-    addLog('STOP replay', 'info');
-  },
-  speed025: () => { state.replaySpeed = 0.25; document.getElementById('speed-disp').textContent = '0.25x'; addLog('Speed → 0.25x', 'speed'); },
-  speed05: () => { state.replaySpeed = 0.5; document.getElementById('speed-disp').textContent = '0.5x'; addLog('Speed → 0.5x', 'speed'); },
-  speed1: () => { state.replaySpeed = 1; document.getElementById('speed-disp').textContent = '1x'; addLog('Speed → 1x', 'speed'); },
-  camA: () => addLog('Replay source → CAM A', 'replay'),
-  camB: () => addLog('Replay source → CAM B', 'replay'),
-  jumpBack: () => { state.bufferSec = Math.max(0, state.bufferSec - 5); document.getElementById('buf-time').textContent = fmtSec(state.bufferSec); addLog('Scrub –5s', 'replay'); },
-  jumpFwd: () => { state.bufferSec += 5; document.getElementById('buf-time').textContent = fmtSec(state.bufferSec); addLog('Scrub +5s', 'replay'); },
-  takeAir: () => { addLog('Replay TO AIR', 'go'); setOnAir(true); },
-  returnLive: () => { addLog('RETURN TO LIVE', 'go'); setOnAir(true); },
-};
+// ─── ADD INPUTS ───────────────────────────────────────────────────────────────
+function addYtInput() {
+  const raw = document.getElementById('yt-url').value.trim();
+  const name = document.getElementById('yt-name').value.trim() || 'YouTube';
+  if (!raw) return warn('Enter a YouTube URL');
+  const embed = ytEmbed(raw);
+  if (!embed) return warn('Could not parse YouTube URL. Use a standard watch link.');
+  pushInput({ name, type: 'youtube', src: embed });
+  document.getElementById('yt-url').value = '';
+  document.getElementById('yt-name').value = '';
+  log('Input added: ' + name, 'go');
+}
 
-function renderDeck() {
-  const grid = document.getElementById('deck-grid');
-  grid.innerHTML = deckConfig.map((btn, i) => {
-    if (btn.cls === 'blank') return `<div class="dk-btn blank"></div>`;
-    const hint = btn.key ? `<span style="font-size:8px;opacity:0.5;">${btn.key}</span>` : '';
-    return `<button class="dk-btn ${btn.cls}" id="dk-${i}" onclick="fireDeck('${btn.action}', ${i})" title="${btn.label}">
-      ${btn.icon}
-      <span>${btn.label}</span>
-      ${hint}
+function ytEmbed(url) {
+  let vid = null;
+  try {
+    const u = new URL(url);
+    if (u.hostname.includes('youtu.be')) vid = u.pathname.slice(1).split('?')[0];
+    else if (u.hostname.includes('youtube.com')) {
+      vid = u.searchParams.get('v');
+      if (!vid && u.pathname.includes('/embed/')) vid = u.pathname.split('/embed/')[1]?.split('?')[0];
+    }
+  } catch(e) {}
+  if (!vid) return null;
+  // autoplay=1, mute=1 gets around the click requirement in most cases
+  // enablejsapi lets us control via postMessage if needed
+  return `https://www.youtube.com/embed/${vid}?autoplay=1&mute=1&controls=0&loop=1&playlist=${vid}&rel=0&modestbranding=1&enablejsapi=1`;
+}
+
+function addFileInput() {
+  const f = document.getElementById('file-pick').files[0];
+  const name = document.getElementById('file-name').value.trim() || 'Video File';
+  if (!f) return warn('Select a video file');
+  const src = URL.createObjectURL(f);
+  pushInput({ name, type: 'video', src });
+  document.getElementById('file-pick').value = '';
+  document.getElementById('file-name').value = '';
+  log('Input added: ' + name, 'go');
+}
+
+function addStillInput() {
+  const f = document.getElementById('still-pick').files[0];
+  const name = document.getElementById('still-name').value.trim() || 'Still';
+  if (!f) return warn('Select an image file');
+  const src = URL.createObjectURL(f);
+  pushInput({ name, type: 'still', src });
+  document.getElementById('still-pick').value = '';
+  document.getElementById('still-name').value = '';
+  log('Input added: ' + name, 'go');
+}
+
+function addLowerThird() {
+  const title = document.getElementById('lt-title').value.trim();
+  const sub   = document.getElementById('lt-sub').value.trim();
+  const pos   = document.getElementById('lt-pos').value;
+  const bg    = document.getElementById('lt-bg').value;
+  const name  = document.getElementById('lt-name').value.trim() || 'Lower Third';
+  if (!title) return warn('Enter a title');
+  pushInput({ name, type: 'lowerthird', lt: { title, sub, pos, bg } });
+  document.getElementById('lt-title').value = '';
+  document.getElementById('lt-sub').value = '';
+  document.getElementById('lt-name').value = '';
+  log('Input added: ' + name, 'go');
+}
+
+function addColourInput() {
+  const t = document.getElementById('col-type').value;
+  const customColor = document.getElementById('col-pick').value;
+  const name = document.getElementById('col-name').value.trim() || t;
+  pushInput({ name, type: 'colour', colType: t, customColor });
+  document.getElementById('col-name').value = '';
+  log('Input added: ' + name, 'go');
+}
+
+function pushInput(inp) {
+  inp.id = Date.now() + Math.random();
+  S.inputs.push(inp);
+  renderAll();
+  renderModalList();
+}
+
+function removeInput(id) {
+  S.inputs = S.inputs.filter(i => i.id !== id);
+  if (S.preview === id) { S.preview = null; clearMon('prv'); }
+  if (S.output  === id) { S.output  = null; clearMon('pgm'); setOnAir(false); }
+  renderAll();
+  renderModalList();
+}
+
+// ─── RENDER ───────────────────────────────────────────────────────────────────
+function renderAll() {
+  renderInputsRow();
+  renderSwitcherRow();
+  document.getElementById('no-inputs-msg').style.display = S.inputs.length ? 'none' : '';
+}
+
+function renderInputsRow() {
+  const row = document.getElementById('inputs-row');
+  const existing = row.querySelectorAll('.inp-tile');
+  existing.forEach(e => e.remove());
+
+  S.inputs.forEach((inp, i) => {
+    const isPrv = inp.id === S.preview;
+    const isPgm = inp.id === S.output;
+    const cls = isPrv ? 'is-prv' : isPgm ? 'is-pgm' : '';
+    const badge = isPrv
+      ? '<span class="inp-tile-badge badge-prv">PRV</span>'
+      : isPgm
+      ? '<span class="inp-tile-badge badge-pgm">PGM</span>'
+      : '';
+
+    const div = document.createElement('div');
+    div.className = 'inp-tile ' + cls;
+    div.dataset.id = inp.id;
+    div.innerHTML = `
+      <div class="inp-tile-thumb">${tileThumb(inp)}${badge}</div>
+      <div class="inp-tile-bar">
+        <span class="inp-tile-name" title="${inp.name}">${inp.name}</span>
+        <span class="inp-tile-num">${i + 1}</span>
+      </div>
+      <button class="inp-tile-del" onclick="event.stopPropagation();removeInput(${inp.id})">✕</button>
+    `;
+    div.addEventListener('click', () => selectPreview(inp.id));
+    row.appendChild(div);
+  });
+}
+
+function tileThumb(inp) {
+  if (inp.type === 'youtube') return `<iframe src="${inp.src}" allow="autoplay" loading="lazy"></iframe>`;
+  if (inp.type === 'video')   return `<video src="${inp.src}" autoplay muted loop playsinline></video>`;
+  if (inp.type === 'still')   return `<img src="${inp.src}" alt="${inp.name}">`;
+  if (inp.type === 'lowerthird') {
+    return `<div class="lt-thumb"><div class="lt-bar" style="background:${inp.lt.bg};">
+      <div class="lt-t">${inp.lt.title}</div>
+      ${inp.lt.sub ? `<div class="lt-s">${inp.lt.sub}</div>` : ''}
+    </div></div>`;
+  }
+  if (inp.type === 'colour') {
+    if (inp.colType === 'bars')   return `<div class="col-bars"></div>`;
+    if (inp.colType === 'black')  return `<div class="col-black"></div>`;
+    if (inp.colType === 'white')  return `<div class="col-white"></div>`;
+    if (inp.colType === 'custom') return `<div class="col-custom" style="background:${inp.customColor};"></div>`;
+  }
+  return '';
+}
+
+function renderSwitcherRow() {
+  const row = document.getElementById('switcher-row');
+  if (!S.inputs.length) { row.innerHTML = '<div class="sw-empty">Add inputs to see switcher buttons</div>'; return; }
+  row.innerHTML = S.inputs.map((inp, i) => {
+    const cls = inp.id === S.preview ? 'sw-prv' : inp.id === S.output ? 'sw-pgm' : '';
+    return `<button class="sw-btn ${cls}" onclick="selectPreview(${inp.id})">
+      <span>${inp.name}</span>
+      <span class="sw-num">${i + 1}</span>
     </button>`;
   }).join('');
 }
 
-function fireDeck(action, idx) {
-  if (!action || !deckActions[action]) return;
-  deckActions[action]();
-  const btn = document.getElementById('dk-' + idx);
-  if (btn) {
-    btn.classList.add('flash');
-    setTimeout(() => btn.classList.remove('flash'), 200);
+function renderModalList() {
+  const list = document.getElementById('modal-inp-list');
+  document.getElementById('modal-inp-count').textContent = S.inputs.length;
+  list.innerHTML = S.inputs.map((inp, i) => `
+    <div class="mil-item">
+      <span class="mil-num">${i + 1}</span>
+      <span class="mil-name">${inp.name}</span>
+      <span class="mil-type">${inp.type}</span>
+      <button class="mil-del" onclick="removeInput(${inp.id})">✕</button>
+    </div>
+  `).join('') || '<span style="font-size:10px;color:#555;">No inputs yet.</span>';
+}
+
+// ─── MONITOR LOADING ──────────────────────────────────────────────────────────
+function loadMon(which, inp) {
+  const screen = document.getElementById(which + '-screen');
+  const nameEl = document.getElementById(which + '-source');
+  nameEl.textContent = inp ? inp.name : '—';
+  if (!inp) { clearMon(which); return; }
+
+  if (inp.type === 'youtube') {
+    // Re-create iframe with autoplay — browser may still require interaction
+    // but mute=1 satisfies autoplay policy in most cases
+    screen.innerHTML = `<iframe src="${inp.src}" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+    tryUnmuteYt(screen.querySelector('iframe'));
+  } else if (inp.type === 'video') {
+    screen.innerHTML = `<video src="${inp.src}" autoplay muted loop playsinline></video>`;
+  } else if (inp.type === 'still') {
+    screen.innerHTML = `<img src="${inp.src}" alt="${inp.name}">`;
+  } else if (inp.type === 'lowerthird') {
+    screen.innerHTML = `<div style="width:100%;height:100%;background:#111;position:relative;">
+      <div class="lt-overlay ${inp.lt.pos}">
+        <div class="lt-overlay-title" style="background:${inp.lt.bg};">${inp.lt.title}</div>
+        ${inp.lt.sub ? `<div class="lt-overlay-sub">${inp.lt.sub}</div>` : ''}
+      </div>
+    </div>`;
+  } else if (inp.type === 'colour') {
+    const bg = inp.colType === 'bars'
+      ? 'linear-gradient(90deg,#c00,#cc0,#0c0,#0cc,#00c,#c0c,#ccc)'
+      : inp.colType === 'black' ? '#000'
+      : inp.colType === 'white' ? '#fff'
+      : inp.customColor;
+    screen.innerHTML = `<div style="width:100%;height:100%;background:${bg};display:flex;align-items:center;justify-content:center;">
+      <span style="font-size:11px;color:rgba(255,255,255,0.3);letter-spacing:0.15em;">${inp.name.toUpperCase()}</span>
+    </div>`;
+  }
+
+  // restore overlay if pgm
+  if (which === 'pgm' && S.pgmOverlay) applyOverlayToMon('pgm', S.pgmOverlay);
+}
+
+function tryUnmuteYt(iframe) {
+  // After user interaction, try to unmute via postMessage
+  setTimeout(() => {
+    try { iframe.contentWindow.postMessage('{"event":"command","func":"unMute","args":""}', '*'); } catch(e) {}
+  }, 2000);
+}
+
+function clearMon(which) {
+  document.getElementById(which + '-screen').innerHTML = `<div class="monitor-empty">${which === 'prv' ? 'PREVIEW' : 'OUTPUT'}</div>`;
+  document.getElementById(which + '-source').textContent = '—';
+}
+
+// ─── SWITCHING ────────────────────────────────────────────────────────────────
+function selectPreview(id) {
+  if (id === S.output) return;
+  S.preview = id;
+  loadMon('prv', S.inputs.find(i => i.id === id));
+  renderAll();
+  log('PRV → ' + S.inputs.find(i => i.id === id).name);
+}
+
+function selectDirect(id) {
+  const inp = S.inputs.find(i => i.id === id);
+  if (!inp) return;
+  S.output = id;
+  if (S.preview === id) S.preview = null;
+  loadMon('pgm', inp);
+  if (!S.preview) clearMon('prv');
+  renderAll();
+  setOnAir(true);
+  log('DIRECT CUT → PGM: ' + inp.name, 'cut');
+}
+
+function doTransition() {
+  if (S.preview === null) { log('No input in preview', 'cut'); return; }
+  const prevOut = S.output;
+  const prevIn  = S.preview;
+  S.output  = prevIn;
+  S.preview = prevOut || null;
+
+  const inp = S.inputs.find(i => i.id === S.output);
+  const backInp = prevOut ? S.inputs.find(i => i.id === prevOut) : null;
+
+  loadMon('pgm', inp);
+  if (backInp) loadMon('prv', backInp);
+  else clearMon('prv');
+
+  renderAll();
+  setOnAir(true);
+
+  const durStr = S.transition !== 'cut' ? ` (${(S.duration / 1000).toFixed(1)}s)` : '';
+  log(`${S.transition.toUpperCase()}${durStr} → PGM: ${inp.name}`, 'cut');
+}
+
+function doAuto() {
+  const was = S.transition;
+  if (S.transition === 'cut') {
+    // temporarily use fade for auto
+    S.transition = 'fade';
+  }
+  doTransition();
+  S.transition = was;
+}
+
+function doFadeToBlack() {
+  S.output = null;
+  clearMon('pgm');
+  renderAll();
+  setOnAir(false);
+  log('FADE TO BLACK', 'cut');
+}
+
+function doSnapshot() {
+  log('--- SNAPSHOT @ ' + new Date().toTimeString().slice(0,8) + ' ---');
+}
+
+function selTrans(btn) {
+  S.transition = btn.dataset.t;
+  document.querySelectorAll('.trans-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+}
+
+// ─── OVERLAYS ─────────────────────────────────────────────────────────────────
+function applyOverlay() {
+  const data = {
+    title: document.getElementById('oe-title').value,
+    sub: document.getElementById('oe-subtitle').value,
+    pos: document.getElementById('oe-position').value,
+    bg: document.getElementById('oe-bg').value,
+  };
+  applyOverlayToMon('prv', data);
+  S.overlayData = data;
+}
+
+function applyOverlayToMon(which, data) {
+  const screen = document.getElementById(which + '-screen');
+  let ov = screen.querySelector('.lt-overlay');
+  if (ov) ov.remove();
+  const d = document.createElement('div');
+  d.className = 'lt-overlay ' + data.pos;
+  d.innerHTML = `<div class="lt-overlay-title" style="background:${data.bg};">${data.title}</div>
+    ${data.sub ? `<div class="lt-overlay-sub">${data.sub}</div>` : ''}`;
+  screen.appendChild(d);
+  if (which === 'pgm') S.pgmOverlay = data;
+}
+
+function clearOverlay() {
+  ['prv', 'pgm'].forEach(w => {
+    const ov = document.getElementById(w + '-screen').querySelector('.lt-overlay');
+    if (ov) ov.remove();
+  });
+  S.overlayData = null; S.pgmOverlay = null;
+}
+
+function closeOverlayEditor() { document.getElementById('overlay-editor').style.display = 'none'; }
+
+// ─── REPLAY ───────────────────────────────────────────────────────────────────
+function doMark(which) {
+  if (which === 'in') {
+    S.markIn = S.bufSec;
+    document.getElementById('in-disp').textContent = fmt(S.markIn);
+    log('MARK IN @ ' + fmt(S.markIn), 'mark');
+  } else {
+    S.markOut = S.bufSec;
+    document.getElementById('out-disp').textContent = fmt(S.markOut);
+    log('MARK OUT @ ' + fmt(S.markOut), 'mark');
   }
 }
 
-const scenes = ['WIDE SHOT', 'SIDELINE', 'CLOSE UP', 'SCOREBUG', 'TITLES', 'REPLAY OUT', 'INTERVIEW', 'B-ROLL'];
-function renderScenes() {
-  document.getElementById('scene-grid').innerHTML = scenes.map((s, i) =>
-    `<button class="scene-btn" id="sc-${i}" onclick="fireScene(${i})">${s}</button>`
-  ).join('');
+function doReplayPlay() {
+  if (S.markIn === null || S.markOut === null) { log('Set mark in and out first', 'cut'); return; }
+  S.replayActive = true;
+  log(`PLAY replay ${fmt(S.markIn)}→${fmt(S.markOut)} @ ${S.speed}x`, 'replay');
+  const dur = (Math.abs(S.markOut - S.markIn) / S.speed) * 1000;
+  setTimeout(() => { if (S.replayActive && !S.looping) { S.replayActive = false; log('Replay complete'); } }, dur);
 }
-function fireScene(i) {
-  document.querySelectorAll('.scene-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('sc-' + i).classList.add('active');
-  addLog('Scene → ' + scenes[i], 'info');
+
+function doReplayLoop() {
+  if (S.markIn === null || S.markOut === null) { log('Set mark in and out first', 'cut'); return; }
+  S.looping = true; S.replayActive = true;
+  log(`LOOP @ ${S.speed}x`, 'replay');
+}
+
+function doReplayStop() {
+  S.replayActive = false; S.looping = false;
+  log('STOP replay');
+}
+
+function doReturnLive() {
+  S.replayActive = false; S.looping = false;
+  log('RETURN TO LIVE', 'go');
+}
+
+function setSpeed(v) {
+  S.speed = v;
+  document.getElementById('spd-disp').textContent = v + 'x';
+  document.querySelectorAll('.spd-btn').forEach(b => b.classList.remove('active'));
+  const map = { 0.25: 0, 0.5: 1, 1: 2, 2: 3 };
+  const idx = map[v];
+  if (idx !== undefined) document.querySelectorAll('.spd-btn')[idx]?.classList.add('active');
+  log('Speed → ' + v + 'x', 'speed');
 }
 
 // ─── LOG ──────────────────────────────────────────────────────────────────────
-function addLog(msg, type) {
-  const log = document.getElementById('event-log');
-  const empty = log.querySelector('.log-empty');
+function log(msg, type) {
+  const body = document.getElementById('log-body');
+  const empty = body.querySelector('.log-empty-msg');
   if (empty) empty.remove();
-  state.logCount++;
-  const now = new Date();
-  const ts = now.toTimeString().slice(0, 8);
+  S.logCount++;
+  const ts = new Date().toTimeString().slice(0, 8);
   const div = document.createElement('div');
   div.className = 'log-entry';
   div.innerHTML = `<span class="log-ts">${ts}</span><span class="log-msg ${type || ''}">${msg}</span>`;
-  log.appendChild(div);
-  log.scrollTop = log.scrollHeight;
-  document.getElementById('log-count').textContent = state.logCount + ' event' + (state.logCount !== 1 ? 's' : '');
+  body.appendChild(div);
+  body.scrollLeft = body.scrollWidth;
+  document.getElementById('log-count').textContent = S.logCount + (S.logCount === 1 ? ' event' : ' events');
 }
 
 function clearLog() {
-  document.getElementById('event-log').innerHTML = '<div class="log-empty">Waiting for production actions...</div>';
-  state.logCount = 0;
+  document.getElementById('log-body').innerHTML = '<span class="log-empty-msg">Waiting for production actions...</span>';
+  S.logCount = 0;
   document.getElementById('log-count').textContent = '0 events';
 }
 
-// ─── TABS / MODALS ────────────────────────────────────────────────────────────
-function switchRightTab(tab, btn) {
-  document.querySelectorAll('.right-tab').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.right-tab-content').forEach(c => c.classList.remove('active'));
-  btn.classList.add('active');
-  document.getElementById('tab-' + tab).classList.add('active');
-}
-
+// ─── MODALS ───────────────────────────────────────────────────────────────────
 function openModal(id) { document.getElementById(id).classList.add('open'); }
 function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 document.addEventListener('click', e => {
-  if (e.target.classList.contains('modal-overlay')) closeModal(e.target.id);
+  if (e.target.classList.contains('modal-bg')) closeModal(e.target.id);
 });
 
-function switchFormTab(tab, btn) {
-  document.querySelectorAll('.ift').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.input-form').forEach(f => f.classList.remove('active'));
+function switchMTab(tab, btn) {
+  document.querySelectorAll('.mtab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.modal-form').forEach(f => f.classList.remove('active'));
   btn.classList.add('active');
-  document.getElementById('form-' + tab).classList.add('active');
+  document.getElementById('mf-' + tab).classList.add('active');
+}
+
+function warn(msg) { alert(msg); }
+
+// ─── STREAM DECK MAP ──────────────────────────────────────────────────────────
+const sdButtons = [
+  { label: 'Mark In',     kb: 'I',     cls: 'mark' },
+  { label: 'Mark Out',    kb: 'O',     cls: 'mark' },
+  { label: 'Play Replay', kb: 'P',     cls: 'go' },
+  { label: 'Loop Replay', kb: 'L',     cls: 'go' },
+  { label: 'Stop',        kb: '—',     cls: 'replay' },
+  { label: '0.5x Speed',  kb: '[',     cls: 'speed' },
+  { label: '1x Speed',    kb: ']',     cls: 'speed' },
+  { label: 'Return Live', kb: 'R',     cls: 'go' },
+  { label: 'CUT / Trans', kb: 'Space', cls: 'go' },
+  { label: 'Auto Trans',  kb: 'A',     cls: 'go' },
+  { label: 'Fade→Black',  kb: 'B',     cls: 'replay' },
+  { label: 'Select Cut',  kb: 'F1',    cls: 'replay' },
+  { label: 'Select Fade', kb: 'F2',    cls: 'replay' },
+  { label: 'Preview 1',   kb: '1',     cls: 'speed' },
+  { label: 'Preview 2',   kb: '2',     cls: 'speed' },
+];
+
+function buildStreamDeckMap() {
+  const grid = document.getElementById('sd-grid');
+  grid.innerHTML = sdButtons.map(b => `
+    <div class="sd-key ${b.cls}">
+      <div class="sd-key-action">${b.label}</div>
+      <div class="sd-key-kb">${b.kb}</div>
+    </div>
+  `).join('') + '<div class="sd-key blank"></div><div class="sd-key blank"></div><div class="sd-key blank"></div><div class="sd-key blank"></div><div class="sd-key blank"></div>';
 }
 
 // ─── KEYBOARD ─────────────────────────────────────────────────────────────────
 function setupKeyboard() {
   document.addEventListener('keydown', e => {
-    const tag = document.activeElement.tagName;
+    const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
 
-    const key = e.key;
-    const num = parseInt(key);
+    const k = e.key;
+    const num = parseInt(k);
 
     if (!isNaN(num) && num >= 1 && num <= 9) {
-      if (e.shiftKey) {
-        const inp = state.inputs[num - 1];
-        if (inp) selectInputDirect(inp.id);
-      } else {
-        const inp = state.inputs[num - 1];
-        if (inp) selectInput(inp.id);
-      }
+      e.preventDefault();
+      const inp = S.inputs[num - 1];
+      if (!inp) return;
+      if (e.shiftKey) selectDirect(inp.id);
+      else selectPreview(inp.id);
       return;
     }
 
-    if (key === 'F1') { e.preventDefault(); setTrans(document.querySelector('[data-trans="cut"]')); return; }
-    if (key === 'F2') { e.preventDefault(); setTrans(document.querySelector('[data-trans="fade"]')); return; }
-    if (key === 'F3') { e.preventDefault(); setTrans(document.querySelector('[data-trans="wipe"]')); return; }
-    if (key === 'F4') { e.preventDefault(); setTrans(document.querySelector('[data-trans="zoom"]')); return; }
+    if (k === 'F1') { e.preventDefault(); selTrans(document.querySelector('[data-t="cut"]')); return; }
+    if (k === 'F2') { e.preventDefault(); selTrans(document.querySelector('[data-t="fade"]')); return; }
+    if (k === 'F3') { e.preventDefault(); selTrans(document.querySelector('[data-t="wipe"]')); return; }
+    if (k === 'F4') { e.preventDefault(); selTrans(document.querySelector('[data-t="slide"]')); return; }
 
-    switch (key) {
-      case ' ': e.preventDefault(); doTransition(); break;
+    switch (k) {
+      case ' ':         e.preventDefault(); doTransition(); break;
       case 'a': case 'A': doAuto(); break;
-      case 'i': case 'I': fireDeckByAction('markIn'); break;
-      case 'o': case 'O': fireDeckByAction('markOut'); break;
-      case 'p': case 'P': fireDeckByAction('playReplay'); break;
-      case 'l': case 'L': fireDeckByAction('loopReplay'); break;
-      case 'r': case 'R': fireDeckByAction('returnLive'); break;
-      case '[': fireDeckByAction('speed05'); break;
-      case ']': fireDeckByAction('speed1'); break;
+      case 'b': case 'B': doFadeToBlack(); break;
+      case 'i': case 'I': doMark('in'); break;
+      case 'o': case 'O': doMark('out'); break;
+      case 'p': case 'P': doReplayPlay(); break;
+      case 'l': case 'L': doReplayLoop(); break;
+      case 'r': case 'R': doReturnLive(); break;
+      case '[':           setSpeed(0.5); break;
+      case ']':           setSpeed(1); break;
       case 'Escape':
-        document.querySelectorAll('.modal-overlay.open').forEach(m => m.classList.remove('open'));
+        document.querySelectorAll('.modal-bg.open').forEach(m => m.classList.remove('open'));
         break;
     }
   });
 }
-
-function fireDeckByAction(action) {
-  const idx = deckConfig.findIndex(d => d.action === action);
-  fireDeck(action, idx);
-}
-
-// ─── TRANS OVERLAY ────────────────────────────────────────────────────────────
-document.body.insertAdjacentHTML('beforeend', '<div id="trans-overlay"></div>');

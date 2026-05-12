@@ -1,54 +1,48 @@
-# LiveSim — vMix Production Training Simulator
+# LiveSim — vMix Training Simulator
 
-A browser-based live production training tool for tech crews. Simulates a vMix-style switcher and Stream Deck replay controller. No install needed — runs entirely in the browser.
+Browser-based live production training tool. Looks and works like vMix. No install, no license needed. Runs on any device with a browser.
+
+## Deploy to GitHub Pages (3 minutes)
+
+1. Create a new GitHub repo (e.g. `livesim`)
+2. Upload `index.html`, `style.css`, `app.js` to the root
+3. Go to **Settings → Pages → Source: main branch / root**
+4. Live at `https://yourusername.github.io/livesim`
 
 ## Features
 
-- **vMix-style live switcher** — Preview/Program monitors, cut and transition controls
-- **YouTube + local video inputs** — Add any YouTube video or local file as a camera input
-- **Stream Deck replay simulator** — Mark in/out, play, loop, speed control
-- **Full keyboard shortcuts** — Matches real vMix workflow
-- **Event log** — Every production action is timestamped
+- vMix-accurate dark UI layout with Preview / Program monitors
+- Add YouTube videos, local video files, image stills, lower thirds, colour inputs
+- Cut, Fade, Wipe, Slide, Zoom transitions with duration control
+- Simulated audio meters
+- Replay controller: mark in/out, play, loop, speed control
+- Stream Deck button map (shows your crew how to configure the physical device)
+- Full keyboard shortcuts matching real vMix workflow
+- Event log
+
+## YouTube Note
+
+YouTube embeds autoplay muted in most browsers without needing a click, because `mute=1` satisfies browser autoplay policy. For training, muted is totally fine — your crew is practising switching, not audio mixing. If a video doesn't autoplay, clicking once anywhere on the page and reloading fixes it.
+
+For guaranteed no-click playback, use local `.mp4` files or host your own video files on GitHub/any server and paste the direct URL.
 
 ## Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
-| `1–9` | Send input to Preview |
-| `Shift + 1–9` | Cut input directly to Program |
-| `Space` | Cut / Transition |
-| `A` | Auto transition |
-| `F1–F4` | Select transition (Cut/Fade/Wipe/Zoom) |
-| `I` | Mark In |
-| `O` | Mark Out |
-| `P` | Play replay |
-| `L` | Loop replay |
-| `R` | Return to live |
-| `[ / ]` | Speed 0.5x / 1x |
-| `Esc` | Close modal |
+| 1–9 | Preview input |
+| Shift+1–9 | Cut direct to output |
+| Space | Cut / Transition |
+| A | Auto transition |
+| B | Fade to black |
+| F1–F4 | Transition type |
+| I / O | Mark In / Out |
+| P | Play replay |
+| L | Loop replay |
+| R | Return to live |
+| [ / ] | Speed 0.5x / 1x |
+| Esc | Close modal |
 
-## Deploy to GitHub Pages
+## Stream Deck Integration
 
-1. Create a new GitHub repository (e.g. `livesim`)
-2. Upload `index.html`, `style.css`, and `app.js` to the root
-3. Go to **Settings → Pages**
-4. Set source to `main` branch, root folder
-5. Your sim will be live at `https://yourusername.github.io/livesim`
-
-## Adding Inputs for Training
-
-### YouTube videos
-Use any public YouTube sports broadcast or match replay. Paste the URL in **Manage Inputs → YouTube / URL**.
-
-Good sources for multi-sport training footage:
-- Search YouTube for "basketball game livestream" or "football match full game"
-- Any public sports channel replay works
-
-### Local files
-Any `.mp4`, `.mov`, or `.webm` file on your machine. Great for using your own past event recordings as training material.
-
-## Tips for Crew Training
-
-- **Director drill**: Play a match on one input, have the director call shots verbally while the TD switches
-- **Replay drill**: Time how fast the replay operator can mark in/out and get a replay to air after a key moment
-- **Keyboard only**: Challenge experienced crew to do a full session without touching the mouse
+The Stream Deck connects to real vMix via the Stream Deck software and vMix's built-in shortcuts. In this sim, keyboard shortcuts replicate those exact mappings. Open **Stream Deck Map** in the app to see how to configure your physical device to match.
