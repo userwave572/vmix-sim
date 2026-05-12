@@ -6,66 +6,64 @@
 <title>LiveSim — Score Controller</title>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
-:root{
-  --bg:#1a1a1a;--bg2:#252525;--bg3:#333;
-  --text:#e0e0e0;--text2:#aaa;--text3:#666;
-  --red:#cc2200;--blue:#0044cc;--green:#00aa44;
-  --font:'Segoe UI',Arial,sans-serif;
-}
-html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;}
-.header{background:#111;border-bottom:2px solid #000;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;}
+:root{--bg:#111;--bg2:#1a1a1a;--bg3:#252525;--bg4:#333;--text:#e0e0e0;--text2:#aaa;--text3:#666;--red:#cc2200;--green:#00aa44;--blue:#0055cc;--amber:#cc8800;--font:'Segoe UI',Arial,sans-serif;}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;}
+.header{background:#0a0a0a;border-bottom:2px solid #000;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
 .header-title{font-size:16px;font-weight:700;color:#fff;}
-.header-sub{font-size:10px;color:var(--text3);}
-.conn-status{font-size:11px;padding:3px 12px;border-radius:12px;font-weight:600;}
-.conn-status.ok{background:rgba(0,170,68,.2);color:#00cc55;border:1px solid #004422;}
-.conn-status.err{background:rgba(204,34,0,.2);color:#ff5533;border:1px solid #440000;}
+.header-sub{font-size:10px;color:var(--text3);margin-top:1px;}
+.conn{font-size:10px;padding:3px 12px;border-radius:12px;font-weight:600;flex-shrink:0;}
+.conn.ok{background:rgba(0,170,68,.15);color:#00cc55;border:1px solid #004422;}
+.conn.err{background:rgba(204,34,0,.15);color:#ff5533;border:1px solid #440000;}
+.body{padding:16px;display:flex;flex-direction:column;gap:14px;max-width:560px;margin:0 auto;}
 
-.body{padding:20px;display:flex;flex-direction:column;gap:20px;max-width:600px;margin:0 auto;}
-
-.score-preview{background:#000;border-radius:4px;overflow:hidden;margin-bottom:4px;}
+/* Score preview strip */
+.score-preview{border-radius:3px;overflow:hidden;}
 .score-bar{display:flex;align-items:stretch;height:44px;}
-.sb-home,.sb-away{display:flex;align-items:center;padding:0 14px;font-weight:700;font-size:15px;color:#fff;flex:1;}
+.sb-home,.sb-away{display:flex;align-items:center;padding:0 14px;font-weight:700;font-size:15px;color:#fff;flex:1;overflow:hidden;white-space:nowrap;}
 .sb-away{justify-content:flex-end;}
-.sb-center{display:flex;align-items:center;background:rgba(0,0,0,.85);padding:0 14px;gap:8px;flex-shrink:0;}
+.sb-center{display:flex;align-items:center;background:rgba(0,0,0,.88);padding:0 14px;gap:8px;flex-shrink:0;}
 .sb-score{font-size:22px;font-weight:700;color:#fff;}
-.sb-sep{font-size:16px;color:rgba(255,255,255,.4);}
-.sb-period{font-size:11px;color:rgba(255,255,255,.7);background:rgba(255,255,255,.1);padding:2px 8px;border-radius:3px;margin-left:6px;}
-.preview-label{font-size:9px;color:var(--text3);text-align:center;padding:4px;text-transform:uppercase;letter-spacing:.1em;}
+.sb-sep{font-size:16px;color:rgba(255,255,255,.35);}
+.sb-period{font-size:11px;color:rgba(255,255,255,.7);background:rgba(255,255,255,.1);padding:2px 8px;border-radius:3px;margin-left:4px;}
+.preview-note{font-size:9px;color:var(--text3);text-align:center;padding:4px;text-transform:uppercase;letter-spacing:.1em;background:var(--bg2);}
 
-.panel{background:var(--bg2);border:1px solid #333;border-radius:4px;padding:16px;display:flex;flex-direction:column;gap:12px;}
-.panel-title{font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;border-bottom:1px solid #333;padding-bottom:8px;}
+.panel{background:var(--bg2);border:1px solid #2a2a2a;border-radius:3px;padding:14px;display:flex;flex-direction:column;gap:10px;}
+.panel-title{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;border-bottom:1px solid #2a2a2a;padding-bottom:8px;}
 
-.team-row{display:grid;grid-template-columns:1fr auto auto auto 1fr;gap:10px;align-items:center;}
-.team-name-input{background:#111;border:1px solid #444;color:var(--text);padding:8px 12px;font-size:14px;font-weight:600;border-radius:3px;text-align:center;}
-.team-name-input:focus{outline:none;border-color:#666;}
-.score-display{font-size:40px;font-weight:700;color:#fff;min-width:60px;text-align:center;font-variant-numeric:tabular-nums;}
-.score-btn{background:var(--bg3);border:1px solid #555;color:var(--text);font-size:22px;font-weight:700;width:44px;height:44px;border-radius:4px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .1s;}
-.score-btn:hover{background:#444;}
-.score-btn:active{transform:scale(.92);}
-.score-btn.minus{color:#ff6655;}
-.score-btn.minus:hover{background:#2a0000;border-color:var(--red);}
-.score-btn.plus{color:#55cc77;}
-.score-btn.plus:hover{background:#002a00;border-color:var(--green);}
-.score-sep{font-size:24px;color:var(--text3);text-align:center;}
+.team-grid{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:center;}
+.team-col{display:flex;flex-direction:column;gap:6px;align-items:center;}
+.team-name-inp{background:#0a0a0a;border:1px solid #333;color:var(--text);padding:8px;font-size:14px;font-weight:600;border-radius:2px;text-align:center;width:100%;}
+.team-name-inp:focus{outline:none;border-color:#555;}
+.team-col-colour{display:flex;align-items:center;gap:6px;}
+.col-inp{height:30px;width:50px;padding:2px;background:#0a0a0a;border:1px solid #333;border-radius:2px;cursor:pointer;}
+.score-adj{display:flex;align-items:center;gap:10px;}
+.adj{background:var(--bg4);border:1px solid #444;color:var(--text);padding:5px 16px;cursor:pointer;font-size:20px;font-weight:700;border-radius:2px;line-height:1;transition:all .1s;}
+.adj:hover{background:#444;}
+.adj.minus:hover{background:#2a0000;border-color:var(--red);color:#ff6655;}
+.adj.plus:hover{background:#002a00;border-color:var(--green);color:#55cc77;}
+.adj:active{transform:scale(.93);}
+.score-num{font-size:44px;font-weight:700;color:#fff;min-width:50px;text-align:center;font-variant-numeric:tabular-nums;}
+.vs{font-size:22px;color:var(--text3);text-align:center;}
 
-.meta-row{display:flex;gap:10px;align-items:center;}
-.meta-label{font-size:11px;color:var(--text2);}
-.meta-input{background:#111;border:1px solid #444;color:var(--text);padding:6px 10px;font-size:13px;border-radius:3px;flex:1;}
-.meta-input:focus{outline:none;border-color:#666;}
+.meta-row{display:flex;align-items:center;gap:10px;}
+.meta-lbl{font-size:11px;color:var(--text2);white-space:nowrap;}
+.meta-inp{background:#0a0a0a;border:1px solid #333;color:var(--text);padding:6px 10px;font-size:13px;border-radius:2px;flex:1;}
+.meta-inp:focus{outline:none;border-color:#555;}
 
-.reset-row{display:flex;gap:8px;}
-.reset-btn{background:transparent;border:1px solid #444;color:var(--text2);padding:7px 16px;border-radius:3px;cursor:pointer;font-size:12px;font-family:var(--font);}
-.reset-btn:hover{background:var(--bg3);color:var(--text);}
-.reset-btn.danger{border-color:#661100;color:#ff6655;}
+.period-row{display:flex;gap:6px;flex-wrap:wrap;}
+.period-btn{background:var(--bg4);border:1px solid #333;color:var(--text2);padding:5px 12px;border-radius:2px;cursor:pointer;font-size:12px;font-family:var(--font);transition:all .1s;}
+.period-btn:hover{background:#444;color:#fff;}
+.period-btn:active{transform:scale(.95);}
+
+.reset-row{display:flex;gap:6px;flex-wrap:wrap;}
+.reset-btn{background:transparent;border:1px solid #333;color:var(--text2);padding:6px 14px;border-radius:2px;cursor:pointer;font-size:11px;font-family:var(--font);transition:all .1s;}
+.reset-btn:hover{background:var(--bg4);color:var(--text);}
+.reset-btn.danger{border-color:#550000;color:#ff5533;}
 .reset-btn.danger:hover{background:#1a0000;}
 
-.colour-row{display:flex;gap:10px;align-items:center;}
-.col-pick{height:36px;width:80px;padding:2px;background:#111;border:1px solid #444;border-radius:3px;cursor:pointer;}
-
-.note{font-size:11px;color:var(--text3);background:#111;border:1px solid #333;padding:10px;border-radius:3px;line-height:1.6;}
-
-.broadcast-indicator{display:flex;align-items:center;gap:6px;font-size:10px;color:var(--text3);}
-.bi-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:blink 1.5s infinite;}
+.note{font-size:10px;color:var(--text3);background:#0a0a0a;border:1px solid #1a1a1a;padding:10px;border-radius:3px;line-height:1.6;}
+.bc-row{display:flex;align-items:center;gap:6px;margin-bottom:4px;}
+.bc-dot{width:6px;height:6px;border-radius:50%;background:var(--green);animation:blink 1.5s infinite;}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
 </style>
 </head>
@@ -74,138 +72,164 @@ html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f
 <div class="header">
   <div>
     <div class="header-title">Score Controller</div>
-    <div class="header-sub">LiveSim — open main app in another tab</div>
+    <div class="header-sub">LiveSim — keep this tab open alongside the main switcher</div>
   </div>
-  <div id="conn-status" class="conn-status err">Not connected</div>
+  <div id="conn" class="conn err">Connecting...</div>
 </div>
 
 <div class="body">
 
+  <!-- Live preview of score bar -->
   <div class="score-preview">
     <div class="score-bar" id="preview-bar">
-      <div class="sb-home" id="p-home-name" style="background:#cc0000;">HOME</div>
+      <div class="sb-home" id="p-home" style="background:#cc0000;">HOME</div>
       <div class="sb-center">
-        <span class="sb-score" id="p-home-score">0</span>
+        <span class="sb-score" id="p-hs">0</span>
         <span class="sb-sep">—</span>
-        <span class="sb-score" id="p-away-score">0</span>
+        <span class="sb-score" id="p-as">0</span>
         <span class="sb-period" id="p-period">Q1</span>
       </div>
-      <div class="sb-away" id="p-away-name" style="background:#0044cc;">AWAY</div>
+      <div class="sb-away" id="p-away" style="background:#0044cc;">AWAY</div>
     </div>
-    <div class="preview-label">Preview — this is what appears on the score bar</div>
+    <div class="preview-note">Live preview — updates on every change</div>
   </div>
 
+  <!-- Scores -->
   <div class="panel">
     <div class="panel-title">Scores</div>
-    <div class="team-row">
-      <input type="text" id="home-name" class="team-name-input" value="HOME" placeholder="Home team" oninput="update()">
-      <button class="score-btn minus" onclick="adj('home',-1)">−</button>
-      <span class="score-display" id="home-score">0</span>
-      <button class="score-btn plus" onclick="adj('home',1)">+</button>
-      <div></div>
-    </div>
-    <div class="team-row">
-      <div></div>
-      <button class="score-btn minus" onclick="adj('away',-1)">−</button>
-      <span class="score-display" id="away-score">0</span>
-      <button class="score-btn plus" onclick="adj('away',1)">+</button>
-      <input type="text" id="away-name" class="team-name-input" value="AWAY" placeholder="Away team" oninput="update()">
+    <div class="team-grid">
+      <div class="team-col">
+        <input type="text" id="home-name" class="team-name-inp" value="HOME" placeholder="Home team" oninput="sync()">
+        <div class="team-col-colour">
+          <span style="font-size:10px;color:var(--text3);">Colour</span>
+          <input type="color" id="home-col" class="col-inp" value="#cc0000" oninput="sync()">
+        </div>
+        <div class="score-adj">
+          <button class="adj minus" onclick="adj('home',-1)">−</button>
+          <span class="score-num" id="home-score">0</span>
+          <button class="adj plus" onclick="adj('home',1)">+</button>
+        </div>
+      </div>
+      <div class="vs">VS</div>
+      <div class="team-col">
+        <input type="text" id="away-name" class="team-name-inp" value="AWAY" placeholder="Away team" oninput="sync()">
+        <div class="team-col-colour">
+          <span style="font-size:10px;color:var(--text3);">Colour</span>
+          <input type="color" id="away-col" class="col-inp" value="#0044cc" oninput="sync()">
+        </div>
+        <div class="score-adj">
+          <button class="adj minus" onclick="adj('away',-1)">−</button>
+          <span class="score-num" id="away-score">0</span>
+          <button class="adj plus" onclick="adj('away',1)">+</button>
+        </div>
+      </div>
     </div>
     <div class="reset-row">
       <button class="reset-btn" onclick="adj('home',0,true)">Reset home</button>
       <button class="reset-btn" onclick="adj('away',0,true)">Reset away</button>
-      <button class="reset-btn danger" onclick="resetAll()">Reset all</button>
+      <button class="reset-btn danger" onclick="adj('home',0,true);adj('away',0,true)">Reset all scores</button>
     </div>
   </div>
 
+  <!-- Period / Match Info -->
   <div class="panel">
     <div class="panel-title">Match Info</div>
     <div class="meta-row">
-      <span class="meta-label">Period / Quarter</span>
-      <input type="text" id="period" class="meta-input" value="Q1" placeholder="Q1, HT, FT..." oninput="update()">
+      <span class="meta-lbl">Period</span>
+      <input type="text" id="period" class="meta-inp" value="Q1" placeholder="Q1, HT, FT..." oninput="sync()">
     </div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;">
-      ${['Q1','Q2','Q3','Q4','HT','FT','OT','1H','2H'].map(p=>
-        `<button class="reset-btn" onclick="setPeriod('${p}')">${p}</button>`
-      ).join('')}
-    </div>
-  </div>
-
-  <div class="panel">
-    <div class="panel-title">Team Colours</div>
-    <div class="colour-row">
-      <span class="meta-label">Home colour</span>
-      <input type="color" id="home-col" class="col-pick" value="#cc0000" oninput="update()">
-      <span class="meta-label" style="margin-left:10px;">Away colour</span>
-      <input type="color" id="away-col" class="col-pick" value="#0044cc" oninput="update()">
+    <div class="period-row">
+      <button class="period-btn" onclick="setPeriod('Q1')">Q1</button>
+      <button class="period-btn" onclick="setPeriod('Q2')">Q2</button>
+      <button class="period-btn" onclick="setPeriod('Q3')">Q3</button>
+      <button class="period-btn" onclick="setPeriod('Q4')">Q4</button>
+      <button class="period-btn" onclick="setPeriod('HT')">HT</button>
+      <button class="period-btn" onclick="setPeriod('FT')">FT</button>
+      <button class="period-btn" onclick="setPeriod('OT')">OT</button>
+      <button class="period-btn" onclick="setPeriod('1H')">1H</button>
+      <button class="period-btn" onclick="setPeriod('2H')">2H</button>
+      <button class="period-btn" onclick="setPeriod('ET')">ET</button>
     </div>
   </div>
 
   <div class="note">
-    <div class="broadcast-indicator"><div class="bi-dot"></div>Broadcasting live to all open LiveSim tabs via BroadcastChannel</div>
-    <br>
-    Keep this tab open while running your production. Changes broadcast instantly to the main switcher. If the main app shows "Not connected", reload both tabs.
+    <div class="bc-row"><div class="bc-dot"></div>Broadcasting live via BroadcastChannel — same browser, any tab.</div>
+    Changes appear instantly on the main switcher. If the connection shows error, reload both tabs and reopen this page from the main app.
   </div>
 
 </div>
 
 <script>
-const D = { home:'HOME', away:'AWAY', homeScore:0, awayScore:0, period:'Q1', homeCol:'#cc0000', awayCol:'#0044cc' };
+const D = {
+  home: 'HOME', away: 'AWAY',
+  homeScore: 0, awayScore: 0,
+  period: 'Q1',
+  homeCol: '#cc0000', awayCol: '#0044cc'
+};
 
 let bc = null;
 try {
   bc = new BroadcastChannel('livesim_scores');
   bc.onmessage = e => {
-    // If main app sends a ping, respond
-    if(e.data.type==='ping') broadcast();
+    // Accept score_update from main app (in case main app adjusts scores too)
+    if (e.data.type === 'score_update') {
+      const d = e.data.data;
+      // Only update fields that differ, to avoid overwriting user input
+      Object.assign(D, d);
+      applyToForm();
+      updatePreview();
+    }
   };
-  document.getElementById('conn-status').textContent = 'Connected';
-  document.getElementById('conn-status').className = 'conn-status ok';
+  document.getElementById('conn').textContent = 'Connected';
+  document.getElementById('conn').className = 'conn ok';
 } catch(err) {
-  document.getElementById('conn-status').textContent = 'BroadcastChannel not supported';
+  document.getElementById('conn').textContent = 'BroadcastChannel not supported';
 }
 
 function broadcast() {
-  if(bc) bc.postMessage({ type:'score_update', data:{...D} });
+  if (bc) bc.postMessage({ type: 'score_update', data: { ...D } });
 }
 
-function adj(team, delta, reset=false) {
-  if(reset) { D[team+'Score']=0; }
-  else { D[team+'Score']=Math.max(0,D[team+'Score']+delta); }
-  document.getElementById(team+'-score').textContent = D[team+'Score'];
-  updatePreview();
-  broadcast();
-}
-
-function resetAll() {
-  D.homeScore=0; D.awayScore=0;
-  document.getElementById('home-score').textContent='0';
-  document.getElementById('away-score').textContent='0';
+function adj(team, delta, reset = false) {
+  if (reset) { D[team + 'Score'] = 0; }
+  else { D[team + 'Score'] = Math.max(0, D[team + 'Score'] + delta); }
+  document.getElementById(team + '-score').textContent = D[team + 'Score'];
   updatePreview(); broadcast();
 }
 
 function setPeriod(p) {
-  document.getElementById('period').value=p;
-  D.period=p; updatePreview(); broadcast();
+  D.period = p;
+  document.getElementById('period').value = p;
+  updatePreview(); broadcast();
 }
 
-function update() {
-  D.home    = document.getElementById('home-name').value||'HOME';
-  D.away    = document.getElementById('away-name').value||'AWAY';
-  D.period  = document.getElementById('period').value||'Q1';
+function sync() {
+  D.home    = document.getElementById('home-name').value || 'HOME';
+  D.away    = document.getElementById('away-name').value || 'AWAY';
+  D.period  = document.getElementById('period').value || 'Q1';
   D.homeCol = document.getElementById('home-col').value;
   D.awayCol = document.getElementById('away-col').value;
   updatePreview(); broadcast();
 }
 
+function applyToForm() {
+  document.getElementById('home-name').value  = D.home;
+  document.getElementById('away-name').value  = D.away;
+  document.getElementById('period').value     = D.period;
+  document.getElementById('home-col').value   = D.homeCol;
+  document.getElementById('away-col').value   = D.awayCol;
+  document.getElementById('home-score').textContent = D.homeScore;
+  document.getElementById('away-score').textContent = D.awayScore;
+}
+
 function updatePreview() {
-  document.getElementById('p-home-name').textContent=D.home;
-  document.getElementById('p-away-name').textContent=D.away;
-  document.getElementById('p-home-score').textContent=D.homeScore;
-  document.getElementById('p-away-score').textContent=D.awayScore;
-  document.getElementById('p-period').textContent=D.period;
-  document.getElementById('p-home-name').style.background=D.homeCol;
-  document.getElementById('p-away-name').style.background=D.awayCol;
+  document.getElementById('p-home').textContent    = D.home;
+  document.getElementById('p-home').style.background = D.homeCol;
+  document.getElementById('p-away').textContent    = D.away;
+  document.getElementById('p-away').style.background = D.awayCol;
+  document.getElementById('p-hs').textContent      = D.homeScore;
+  document.getElementById('p-as').textContent      = D.awayScore;
+  document.getElementById('p-period').textContent  = D.period;
 }
 </script>
 </body>

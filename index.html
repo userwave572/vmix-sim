@@ -8,236 +8,250 @@
 </head>
 <body>
 
+<!-- ═══ TITLEBAR (vMix top menu bar) ═══ -->
 <div class="titlebar">
   <div class="tbar-l">
-    <span class="app-name">LiveSim</span>
-    <span class="app-ver">vMix Training</span>
-    <button class="tmenu" onclick="openModal('config-modal')">⚙ Config</button>
+    <span class="app-logo">LiveSim</span>
+    <div class="tbar-sep"></div>
     <button class="tmenu" onclick="openModal('add-input-modal')">+ Add Input</button>
     <button class="tmenu" onclick="openModal('lt-modal')">T Lower Third</button>
-    <button class="tmenu" onclick="openModal('overlay-modal')">◈ Custom Overlay</button>
-    <button class="tmenu" onclick="openModal('score-modal')">⬛ Score Bar</button>
+    <button class="tmenu" onclick="openModal('overlay-modal')">◈ Overlay</button>
+    <button class="tmenu" onclick="openModal('score-modal')">⬛ Scores</button>
+    <button class="tmenu" onclick="openModal('replay-modal')">↺ Replay</button>
+    <button class="tmenu" onclick="openModal('config-modal')">⚙ Config</button>
     <button class="tmenu" onclick="openModal('shortcuts-modal')">? Keys</button>
   </div>
+  <div class="tbar-c">
+    <div class="stream-stat" id="stream-stat">
+      <span class="ss-dot"></span><span class="ss-lbl">STREAM</span>
+    </div>
+    <div class="rec-stat" id="rec-stat">
+      <span class="ss-dot"></span><span class="ss-lbl">REC</span>
+    </div>
+  </div>
   <div class="tbar-r">
-    <div class="tstat"><span class="tslbl">STREAM</span><span class="tsval mono" id="stream-timer">00:00:00</span></div>
+    <span class="timecode mono" id="stream-timer">00:00:00</span>
     <div class="onair" id="onair">● ON AIR</div>
   </div>
 </div>
 
+<!-- ═══ MAIN BODY ═══ -->
 <div class="vmix-body">
 
-  <!-- INPUT TILES -->
-  <div class="inputs-section">
-    <div class="inputs-row" id="inputs-row">
-      <div class="no-inp" id="no-inp-msg">No inputs — click <b>+ Add Input</b> to begin</div>
-    </div>
-    <div class="inputs-bar">
-      <span class="inputs-bar-hint">Tile click → Preview &nbsp;|&nbsp; Switcher row → direct cut to Output</span>
-    </div>
-  </div>
+  <!-- LEFT: MONITORS + INPUT TILES -->
+  <div class="main-col">
 
-  <!-- MONITORS -->
-  <div class="monitors-section">
+    <!-- MONITORS ROW -->
+    <div class="monitors-row">
 
-    <!-- PREVIEW -->
-    <div class="mon-block prv-block">
-      <div class="mon-topbar prv-topbar">
-        <span class="mon-badge prv-badge">PREVIEW</span>
-        <span class="mon-src" id="prv-src">—</span>
-        <span class="mon-hint">Keys 1–9</span>
+      <!-- PREVIEW MONITOR -->
+      <div class="mon-block prv-block">
+        <div class="mon-topbar prv-topbar">
+          <span class="mon-badge prv-badge">PREVIEW</span>
+          <span class="mon-src" id="prv-src">—</span>
+        </div>
+        <div class="mon-screen" id="prv-screen">
+          <div class="mon-media" id="prv-media"></div>
+          <div class="lt-layer" id="prv-lt"></div>
+          <div class="overlay-layer" id="prv-cov" style="display:none;"></div>
+          <div class="score-layer" id="prv-score" style="display:none;"></div>
+          <div class="mon-empty" id="prv-empty">PREVIEW</div>
+        </div>
       </div>
-      <div class="mon-screen" id="prv-screen">
-        <div class="mon-media" id="prv-media"></div>
-        <div class="lt-container" id="prv-lt"></div>
-        <!-- custom overlay for preview -->
-        <div class="custom-overlay" id="prv-cov" style="display:none;"></div>
-        <!-- score bar for preview -->
-        <div class="score-bar-wrap" id="prv-score" style="display:none;"></div>
-        <div class="mon-empty" id="prv-empty">PREVIEW</div>
-      </div>
-    </div>
 
-    <!-- TRANSITION COLUMN -->
-    <div class="trans-col">
-      <div class="trans-section-lbl">TRANSITION</div>
-      <div class="trans-types-group">
-        <button class="trans-type-btn active" data-t="Cut"   onclick="selTrans(this)">Cut</button>
-        <button class="trans-type-btn"        data-t="Fade"  onclick="selTrans(this)">Fade</button>
-        <button class="trans-type-btn"        data-t="Wipe"  onclick="selTrans(this)">Wipe</button>
-        <button class="trans-type-btn"        data-t="Slide" onclick="selTrans(this)">Slide</button>
-        <button class="trans-type-btn"        data-t="Zoom"  onclick="selTrans(this)">Zoom</button>
-      </div>
-      <div class="dur-group">
-        <span class="dur-lbl">DURATION</span>
-        <input type="range" id="dur-slider" min="200" max="3000" step="100" value="1000">
-        <span class="dur-val" id="dur-val">1.0s</span>
-      </div>
-      <button class="trans-go" onclick="doTransition()">CUT / TRANS<span class="go-key">SPACE</span></button>
-      <button class="auto-go" onclick="doAuto()">AUTO<span class="go-key">A</span></button>
-      <button class="ftb-go" id="ftb-go" onclick="doFTB()">FADE TO BLACK<span class="go-key">B</span></button>
-    </div>
-
-    <!-- OUTPUT / PROGRAM -->
-    <div class="mon-block pgm-block">
-      <div class="mon-topbar pgm-topbar">
-        <span class="mon-badge pgm-badge">OUTPUT</span>
-        <span class="mon-src" id="pgm-src">—</span>
-        <span class="mon-hint">Switcher row → direct cut</span>
-      </div>
-      <div class="mon-screen" id="pgm-screen">
-        <!-- TWO LAYERS for smooth crossfades -->
-        <div class="mon-layer" id="pgm-layer-a"></div>
-        <div class="mon-layer" id="pgm-layer-b" style="opacity:0;"></div>
-        <div class="lt-container" id="pgm-lt"></div>
-        <!-- custom overlay for program -->
-        <div class="custom-overlay" id="pgm-cov" style="display:none;"></div>
-        <!-- score bar for program -->
-        <div class="score-bar-wrap" id="pgm-score" style="display:none;"></div>
-        <div class="mon-empty" id="pgm-empty">OUTPUT</div>
-        <div class="ftb-overlay" id="ftb-overlay"></div>
-      </div>
-    </div>
-
-    <!-- RIGHT COL -->
-    <div class="right-col">
-      <div class="audio-panel">
-        <div class="panel-lbl">MASTER AUDIO</div>
-        <div class="audio-row">
-          <div class="meter-wrap"><div class="meter-track"><div class="meter-fill" id="ml"></div></div><span class="meter-ch">L</span></div>
-          <div class="meter-wrap"><div class="meter-track"><div class="meter-fill" id="mr"></div></div><span class="meter-ch">R</span></div>
-          <div class="vol-wrap">
-            <input type="range" id="vol-slider" min="0" max="100" value="80" class="vol-slider">
-            <span class="vol-val" id="vol-val">80</span>
+      <!-- TRANSITION COLUMN (vMix center column) -->
+      <div class="trans-col">
+        <button class="qp-header-btn" onclick="doQuickPlay()">Quick Play</button>
+        <div class="trans-btns-group">
+          <div class="trans-row">
+            <button class="trans-btn active" data-t="Cut"   onclick="selTrans(this)">Cut</button>
+            <button class="trans-arr" data-t="Cut"   onclick="openTransConfig('Cut')">▶</button>
           </div>
+          <div class="trans-row">
+            <button class="trans-btn" data-t="Fade"  onclick="selTrans(this)">Fade</button>
+            <button class="trans-arr" data-t="Fade"  onclick="openTransConfig('Fade')">▶</button>
+          </div>
+          <div class="trans-row">
+            <button class="trans-btn" data-t="Wipe"  onclick="selTrans(this)">Wipe</button>
+            <button class="trans-arr" data-t="Wipe"  onclick="openTransConfig('Wipe')">▶</button>
+          </div>
+          <div class="trans-row">
+            <button class="trans-btn" data-t="Fly"   onclick="selTrans(this)">Fly</button>
+            <button class="trans-arr" data-t="Fly"   onclick="openTransConfig('Fly')">▶</button>
+          </div>
+          <div class="trans-row">
+            <button class="trans-btn" data-t="Zoom"  onclick="selTrans(this)">Zoom</button>
+            <button class="trans-arr" data-t="Zoom"  onclick="openTransConfig('Zoom')">▶</button>
+          </div>
+          <button class="ftb-btn" id="ftb-btn" onclick="doFTB()">FTB</button>
+        </div>
+        <!-- Overlay layer selectors (1–4) -->
+        <div class="overlay-selectors">
+          <button class="ovl-sel active" data-layer="1" onclick="selOverlayLayer(this)">1</button>
+          <button class="ovl-sel" data-layer="2" onclick="selOverlayLayer(this)">2</button>
+          <button class="ovl-sel" data-layer="3" onclick="selOverlayLayer(this)">3</button>
+          <button class="ovl-sel" data-layer="4" onclick="selOverlayLayer(this)">4</button>
+        </div>
+        <!-- T-bar / duration -->
+        <div class="tbar-dur">
+          <input type="range" id="dur-slider" min="100" max="3000" step="100" value="1000" class="dur-slider">
+          <span class="dur-val mono" id="dur-val">1.0s</span>
+        </div>
+        <!-- BIG CUT button -->
+        <button class="big-cut-btn" onclick="doTransition()">
+          CUT<span class="bkey">SPACE</span>
+        </button>
+        <button class="auto-btn" onclick="doAuto()">
+          Auto<span class="bkey">A</span>
+        </button>
+        <!-- Timecode -->
+        <div class="timecode-display" id="timecode-disp">
+          <div class="tc-frames mono" id="tc-frames">00:00:00.00</div>
+          <div class="tc-clock mono" id="tc-clock">00:00 AM</div>
         </div>
       </div>
-      <div class="replay-panel">
-        <div class="panel-lbl">REPLAY CONTROLLER</div>
-        <div class="replay-stats-grid">
-          <div class="rsg"><div class="rsg-l">VIDEO TIME</div><div class="rsg-v mono" id="buf-disp">--:--:--</div></div>
-          <div class="rsg"><div class="rsg-l">SPEED</div><div class="rsg-v mono" id="spd-disp">1.0x</div></div>
-          <div class="rsg"><div class="rsg-l">MARK IN</div><div class="rsg-v mono" id="in-disp">--:--:--</div></div>
-          <div class="rsg"><div class="rsg-l">MARK OUT</div><div class="rsg-v mono" id="out-disp">--:--:--</div></div>
+
+      <!-- OUTPUT MONITOR -->
+      <div class="mon-block pgm-block">
+        <div class="mon-topbar pgm-topbar">
+          <span class="mon-badge pgm-badge">OUTPUT</span>
+          <span class="mon-src" id="pgm-src">—</span>
         </div>
-        <div class="replay-status-bar" id="replay-status-bar">IDLE — load a video to use replay</div>
-        <div class="replay-btns">
-          <button class="rb rb-mark" onclick="doMarkIn()">◀ Mark In <span class="rk">I</span></button>
-          <button class="rb rb-mark" onclick="doMarkOut()">Mark Out ▶ <span class="rk">O</span></button>
-          <button class="rb rb-play" onclick="doReplayPlay()">▶ Play <span class="rk">P</span></button>
-          <button class="rb rb-loop" onclick="doReplayLoop()">⟳ Loop <span class="rk">L</span></button>
-          <button class="rb rb-stop" onclick="doReplayStop()">■ Stop <span class="rk">S</span></button>
-          <button class="rb rb-live" onclick="doReturnLive()">▶ Live <span class="rk">R</span></button>
+        <div class="mon-screen" id="pgm-screen">
+          <!-- Two layers for smooth crossfades -->
+          <div class="mon-layer" id="pgm-layer-a"></div>
+          <div class="mon-layer" id="pgm-layer-b" style="opacity:0;z-index:1;"></div>
+          <div class="lt-layer" id="pgm-lt"></div>
+          <div class="overlay-layer" id="pgm-cov" style="display:none;"></div>
+          <div class="score-layer" id="pgm-score" style="display:none;"></div>
+          <!-- Replay badge -->
+          <div class="replay-badge" id="replay-badge" style="display:none;">
+            <span>REPLAY</span><span id="replay-badge-speed">1x</span>
+          </div>
+          <div class="mon-empty" id="pgm-empty">OUTPUT</div>
+          <div class="ftb-overlay" id="ftb-overlay"></div>
+          <!-- Stinger overlay -->
+          <div class="stinger-overlay" id="stinger-overlay" style="display:none;"></div>
         </div>
-        <div class="speed-row">
-          <button class="spd" onclick="setSpeed(0.25)">0.25x</button>
-          <button class="spd" onclick="setSpeed(0.5)">0.5x<span class="rk">[</span></button>
-          <button class="spd active" onclick="setSpeed(1.0)">1x<span class="rk">]</span></button>
-          <button class="spd" onclick="setSpeed(2.0)">2x</button>
-        </div>
-        <div class="replay-log-wrap">
-          <div class="panel-lbl" style="margin-top:6px;">REPLAY LOG</div>
-          <div class="replay-log" id="replay-log"></div>
+      </div>
+
+    </div><!-- /monitors-row -->
+
+    <!-- INPUT TILES (vMix bottom grid) -->
+    <div class="inputs-section">
+      <div class="inputs-inner" id="inputs-inner">
+        <div class="no-inp" id="no-inp-msg">
+          No inputs — click <b>+ Add Input</b> in the menu above
         </div>
       </div>
     </div>
 
-  </div>
+  </div><!-- /main-col -->
 
-  <!-- SWITCHER ROW -->
-  <div class="switcher-section">
-    <div class="sw-label-row"><span class="sw-section-lbl">SWITCHER — click to cut direct to OUTPUT</span></div>
-    <div class="sw-row" id="sw-row"><div class="sw-empty">Add inputs above to use the switcher</div></div>
-  </div>
-
-  <!-- EVENT LOG -->
-  <div class="log-section">
-    <div class="log-hdr">
-      <span class="log-title">EVENT LOG</span>
-      <span class="log-cnt" id="log-cnt">0 events</span>
-      <button class="log-clear-btn" onclick="clearLog()">Clear</button>
+  <!-- RIGHT: AUDIO MIXER PANEL -->
+  <div class="audio-panel">
+    <div class="audio-panel-hdr">
+      <span>Audio Mix</span>
+      <button class="audio-panel-toggle" id="audio-toggle" onclick="toggleAudioPanel()">Hide</button>
     </div>
-    <div class="log-body" id="log-body"><span class="log-empty">Waiting...</span></div>
+    <div class="audio-panel-body" id="audio-panel-body">
+      <div class="audio-section-lbl">OUTPUTS</div>
+      <div class="audio-channels-row" id="audio-outputs-row">
+        <!-- Master + Recording channels, built by JS -->
+      </div>
+      <div class="audio-section-lbl" style="margin-top:8px;">INPUTS</div>
+      <div class="audio-channels-row" id="audio-inputs-row">
+        <!-- Per-input channels, built by JS -->
+      </div>
+    </div>
   </div>
 
+</div><!-- /vmix-body -->
+
+<!-- STATUS BAR (bottom) -->
+<div class="status-bar">
+  <span class="sb-item" id="sb-fps">30 FPS</span>
+  <span class="sb-sep">|</span>
+  <span class="sb-item" id="sb-res">1080p30</span>
+  <span class="sb-sep">|</span>
+  <span class="sb-item" id="sb-cpu">CPU 0%</span>
+  <span class="sb-sep">|</span>
+  <span class="sb-item" id="sb-inputs-count">0 inputs</span>
+  <span class="sb-fill"></span>
+  <span class="sb-item">LiveSim vMix Training Edition</span>
 </div>
+
+<!-- ═══ STINGER CONFIG (inline mini panel) ═══ -->
+<!-- Stinger video element (hidden, used as source) -->
+<video id="stinger-video-src" style="display:none;" preload="auto"></video>
 
 <!-- ═══ MODALS ═══ -->
-
-<!-- CONFIG -->
-<div class="modal-bg" id="config-modal">
-<div class="modal modal-wide">
-  <div class="modal-hdr"><span>Configuration</span><button class="modal-x" onclick="closeModal('config-modal')">✕</button></div>
-  <div class="config-body">
-    <div class="cfg-section">
-      <div class="cfg-lbl">TRANSITIONS</div>
-      <div class="cfg-row"><label>Default transition</label>
-        <select id="cfg-default-trans" class="cfg-sel">
-          <option>Cut</option><option>Fade</option><option>Wipe</option><option>Slide</option><option>Zoom</option>
-        </select>
-      </div>
-      <div class="cfg-row"><label>Default duration (ms)</label><input type="number" id="cfg-default-dur" class="cfg-inp" value="1000" min="100" max="5000" step="100"></div>
-      <div class="cfg-row"><label>Fade to Black duration (ms)</label><input type="number" id="cfg-ftb-dur" class="cfg-inp" value="500" min="100" max="3000" step="100"></div>
-    </div>
-    <div class="cfg-section">
-      <div class="cfg-lbl">CUSTOM TRANSITIONS (F6–F12)</div>
-      <p class="cfg-note">Assign a transition + duration to F6–F12 for one-touch switching.</p>
-      <div id="custom-trans-list"></div>
-      <button class="cfg-add-btn" onclick="addCustomTrans()">+ Add Slot</button>
-    </div>
-    <div class="cfg-section">
-      <div class="cfg-lbl">LOWER THIRD</div>
-      <div class="cfg-row"><label>Fade-in duration (ms)</label><input type="number" id="cfg-lt-fade" class="cfg-inp" value="400" min="0" max="2000" step="100"></div>
-    </div>
-    <button class="cfg-save-btn" onclick="saveConfig()">Save &amp; Apply</button>
-  </div>
-</div>
-</div>
 
 <!-- ADD INPUT -->
 <div class="modal-bg" id="add-input-modal">
 <div class="modal">
   <div class="modal-hdr"><span>Add Input</span><button class="modal-x" onclick="closeModal('add-input-modal')">✕</button></div>
-  <div class="modal-tabs">
-    <button class="mtab active" onclick="switchMTab('file',this)">Video File</button>
-    <button class="mtab" onclick="switchMTab('still',this)">Still / Image</button>
+  <div class="modal-tabs" id="add-input-tabs">
+    <button class="mtab active" onclick="switchMTab('file',this)">Video</button>
+    <button class="mtab" onclick="switchMTab('still',this)">Still</button>
+    <button class="mtab" onclick="switchMTab('logo',this)">Logo</button>
     <button class="mtab" onclick="switchMTab('colour',this)">Colour</button>
   </div>
-  <div id="mf-file" class="modal-form active">
-    <label>Video file (.mp4 .mov .webm)</label>
-    <input type="file" id="file-pick" accept="video/*">
-    <label>Input name</label>
-    <input type="text" id="file-name" placeholder="CAM 1 — Wide">
-    <button class="modal-add-btn" onclick="addFileInput()">Add Video Input</button>
+  <div class="modal-body">
+    <div id="mf-file" class="mf active">
+      <label>Video file (.mp4 .mov .webm)</label>
+      <input type="file" id="file-pick" accept="video/*">
+      <label>Input name</label>
+      <input type="text" id="file-name" placeholder="CAM 1 — Wide">
+      <button class="modal-btn" onclick="addFileInput()">Add Video</button>
+    </div>
+    <div id="mf-still" class="mf">
+      <label>Image file (.jpg .png .gif .svg)</label>
+      <input type="file" id="still-pick" accept="image/*">
+      <label>Input name</label>
+      <input type="text" id="still-name" placeholder="Sponsor Slide">
+      <button class="modal-btn" onclick="addStillInput()">Add Still</button>
+    </div>
+    <div id="mf-logo" class="mf">
+      <label>Logo image (.png with transparency recommended)</label>
+      <input type="file" id="logo-pick" accept="image/*">
+      <label>Logo name</label>
+      <input type="text" id="logo-name" placeholder="Team Logo">
+      <label>Default position</label>
+      <select id="logo-pos">
+        <option value="top-right">Top Right</option>
+        <option value="top-left">Top Left</option>
+        <option value="bottom-right">Bottom Right</option>
+        <option value="bottom-left">Bottom Left</option>
+        <option value="center">Centre</option>
+      </select>
+      <label>Default size (%)</label>
+      <input type="range" id="logo-size" min="5" max="50" value="20">
+      <span id="logo-size-val" style="font-size:10px;color:var(--text3);">20%</span>
+      <button class="modal-btn" onclick="addLogoInput()">Add Logo</button>
+    </div>
+    <div id="mf-colour" class="mf">
+      <label>Type</label>
+      <select id="col-type"><option value="bars">Colour Bars</option><option value="black">Black</option><option value="white">White</option><option value="custom">Custom</option></select>
+      <label>Custom colour</label>
+      <input type="color" id="col-pick" value="#003366">
+      <label>Input name</label>
+      <input type="text" id="col-name" placeholder="Black">
+      <button class="modal-btn" onclick="addColourInput()">Add Colour</button>
+    </div>
+    <div class="modal-list-hdr">Current inputs (<span id="modal-inp-count">0</span>)</div>
+    <div class="modal-inp-list" id="modal-inp-list"></div>
   </div>
-  <div id="mf-still" class="modal-form">
-    <label>Image file (.jpg .png .gif)</label>
-    <input type="file" id="still-pick" accept="image/*">
-    <label>Input name</label>
-    <input type="text" id="still-name" placeholder="Sponsor Slide">
-    <button class="modal-add-btn" onclick="addStillInput()">Add Still</button>
-  </div>
-  <div id="mf-colour" class="modal-form">
-    <label>Colour type</label>
-    <select id="col-type"><option value="bars">Colour Bars</option><option value="black">Black</option><option value="white">White</option><option value="custom">Custom colour</option></select>
-    <label>Custom colour</label>
-    <input type="color" id="col-pick" value="#003366">
-    <label>Input name</label>
-    <input type="text" id="col-name" placeholder="Black">
-    <button class="modal-add-btn" onclick="addColourInput()">Add Colour</button>
-  </div>
-  <div class="modal-list-hdr">Current inputs (<span id="modal-inp-count">0</span>)</div>
-  <div class="modal-inp-list" id="modal-inp-list"></div>
 </div>
 </div>
 
 <!-- LOWER THIRD -->
 <div class="modal-bg" id="lt-modal">
 <div class="modal">
-  <div class="modal-hdr"><span>Lower Third Overlay</span><button class="modal-x" onclick="closeModal('lt-modal')">✕</button></div>
-  <div class="modal-form active" style="padding:14px;gap:8px;">
-    <p class="yt-note">Lower thirds overlay directly on the video and fade in. Applied independently to Preview or Output.</p>
-    <label>Title text</label><input type="text" id="lt-title" placeholder="John Smith">
+  <div class="modal-hdr"><span>Lower Third</span><button class="modal-x" onclick="closeModal('lt-modal')">✕</button></div>
+  <div class="modal-body">
+    <p class="note-box">Overlays on top of video, fades in. Apply to Preview or Output independently.</p>
+    <label>Title</label><input type="text" id="lt-title" placeholder="John Smith">
     <label>Subtitle</label><input type="text" id="lt-sub" placeholder="Head Coach">
     <label>Position</label>
     <select id="lt-pos">
@@ -245,18 +259,15 @@
       <option value="bottom-center">Bottom Centre</option><option value="top-left">Top Left</option>
     </select>
     <label>Bar colour</label>
-    <select id="lt-bg">
-      <option value="#cc0000">Red</option><option value="#0044cc">Blue</option><option value="#111111">Dark</option>
-      <option value="#ffffff">White</option><option value="#ff6600">Orange</option><option value="#006600">Green</option>
-    </select>
+    <select id="lt-bg"><option value="#cc0000">Red</option><option value="#0044cc">Blue</option><option value="#111">Dark</option><option value="#fff">White</option><option value="#ff6600">Orange</option><option value="#006600">Green</option></select>
     <label>Text colour</label>
-    <select id="lt-fg"><option value="#ffffff">White</option><option value="#000000">Black</option><option value="#ffff00">Yellow</option></select>
-    <div style="display:flex;gap:8px;">
-      <button class="modal-add-btn" style="flex:1" onclick="applyLT('prv')">Apply to Preview</button>
-      <button class="modal-add-btn" style="flex:1;background:#880000;" onclick="applyLT('pgm')">Apply to Output</button>
+    <select id="lt-fg"><option value="#fff">White</option><option value="#000">Black</option><option value="#ff0">Yellow</option></select>
+    <div class="btn-row">
+      <button class="modal-btn" onclick="applyLT('prv')">→ Preview</button>
+      <button class="modal-btn red-btn" onclick="applyLT('pgm')">→ Output</button>
+      <button class="modal-btn grey-btn" onclick="clearLT()">Clear All</button>
     </div>
-    <button class="modal-add-btn" style="background:#2a2a2a;border:1px solid #555;" onclick="clearLT()">Clear All</button>
-    <div class="modal-list-hdr" style="margin-top:4px;">Saved lower thirds</div>
+    <div class="modal-list-hdr" style="margin-top:8px;">Saved</div>
     <div id="lt-saved-list"></div>
   </div>
 </div>
@@ -266,49 +277,46 @@
 <div class="modal-bg" id="overlay-modal">
 <div class="modal modal-wide">
   <div class="modal-hdr"><span>Custom Overlay</span><button class="modal-x" onclick="closeModal('overlay-modal')">✕</button></div>
-  <div class="modal-form active" style="padding:14px;gap:10px;">
-    <p class="yt-note">Overlays appear directly on the video. Drag them freely in the monitor. PRV and PGM are independent.</p>
+  <div class="modal-body">
+    <p class="note-box">Drag overlays directly on the monitor to reposition. Preview and Output are independent.</p>
     <div class="overlay-tabs">
-      <button class="otab active" onclick="switchOTab('prv',this)">Preview Overlay</button>
-      <button class="otab" onclick="switchOTab('pgm',this)">Output Overlay</button>
+      <button class="otab active" onclick="switchOTab('prv',this)">Preview</button>
+      <button class="otab" onclick="switchOTab('pgm',this)">Output</button>
     </div>
-    <div id="ot-prv" class="ot-panel active">
-      <label>Text content</label>
-      <input type="text" id="cov-prv-text" placeholder="Your overlay text" oninput="updateCovPreview('prv')">
-      <div class="cfg-row">
-        <label>Text colour</label><input type="color" id="cov-prv-fg" value="#ffffff" style="width:60px;height:28px;" oninput="updateCovPreview('prv')">
-        <label>Background</label><input type="color" id="cov-prv-bg" value="#000000" style="width:60px;height:28px;" oninput="updateCovPreview('prv')">
-        <label>Opacity</label><input type="range" id="cov-prv-opacity" min="0" max="100" value="70" style="width:80px;" oninput="updateCovPreview('prv')">
+    <div id="ot-prv" class="ot-panel">
+      <label>Text</label>
+      <input type="text" id="cov-prv-text" placeholder="Overlay text" oninput="liveUpdateCov('prv')">
+      <div class="form-row">
+        <div class="form-col"><label>Text colour</label><input type="color" id="cov-prv-fg" value="#ffffff" oninput="liveUpdateCov('prv')"></div>
+        <div class="form-col"><label>Background</label><input type="color" id="cov-prv-bg" value="#000000" oninput="liveUpdateCov('prv')"></div>
+        <div class="form-col"><label>Opacity %</label><input type="number" id="cov-prv-opacity" value="70" min="0" max="100" oninput="liveUpdateCov('prv')"></div>
       </div>
-      <div class="cfg-row">
-        <label>Font size</label><input type="range" id="cov-prv-size" min="8" max="48" value="16" style="width:120px;" oninput="updateCovPreview('prv')">
-        <span id="cov-prv-size-val" style="font-size:10px;color:var(--text3);">16px</span>
-        <label>Bold</label><input type="checkbox" id="cov-prv-bold" oninput="updateCovPreview('prv')">
+      <div class="form-row">
+        <div class="form-col"><label>Size (px)</label><input type="range" id="cov-prv-size" min="8" max="60" value="18" oninput="liveUpdateCov('prv')"><span id="cov-prv-size-v">18px</span></div>
+        <div class="form-col"><label>Bold</label><input type="checkbox" id="cov-prv-bold" oninput="liveUpdateCov('prv')"></div>
       </div>
-      <div style="display:flex;gap:8px;">
-        <button class="modal-add-btn" style="flex:1;" onclick="showCov('prv')">Show on Preview</button>
-        <button class="modal-add-btn" style="flex:1;background:#333;" onclick="hideCov('prv')">Hide</button>
+      <div class="btn-row">
+        <button class="modal-btn" onclick="showCov('prv')">Show on Preview</button>
+        <button class="modal-btn grey-btn" onclick="hideCov('prv')">Hide</button>
       </div>
     </div>
     <div id="ot-pgm" class="ot-panel" style="display:none;">
-      <label>Text content</label>
-      <input type="text" id="cov-pgm-text" placeholder="Your overlay text" oninput="updateCovPreview('pgm')">
-      <div class="cfg-row">
-        <label>Text colour</label><input type="color" id="cov-pgm-fg" value="#ffffff" style="width:60px;height:28px;" oninput="updateCovPreview('pgm')">
-        <label>Background</label><input type="color" id="cov-pgm-bg" value="#000000" style="width:60px;height:28px;" oninput="updateCovPreview('pgm')">
-        <label>Opacity</label><input type="range" id="cov-pgm-opacity" min="0" max="100" value="70" style="width:80px;" oninput="updateCovPreview('pgm')">
+      <label>Text</label>
+      <input type="text" id="cov-pgm-text" placeholder="Overlay text" oninput="liveUpdateCov('pgm')">
+      <div class="form-row">
+        <div class="form-col"><label>Text colour</label><input type="color" id="cov-pgm-fg" value="#ffffff" oninput="liveUpdateCov('pgm')"></div>
+        <div class="form-col"><label>Background</label><input type="color" id="cov-pgm-bg" value="#000000" oninput="liveUpdateCov('pgm')"></div>
+        <div class="form-col"><label>Opacity %</label><input type="number" id="cov-pgm-opacity" value="70" min="0" max="100" oninput="liveUpdateCov('pgm')"></div>
       </div>
-      <div class="cfg-row">
-        <label>Font size</label><input type="range" id="cov-pgm-size" min="8" max="48" value="16" style="width:120px;" oninput="updateCovPreview('pgm')">
-        <span id="cov-pgm-size-val" style="font-size:10px;color:var(--text3);">16px</span>
-        <label>Bold</label><input type="checkbox" id="cov-pgm-bold" oninput="updateCovPreview('pgm')">
+      <div class="form-row">
+        <div class="form-col"><label>Size (px)</label><input type="range" id="cov-pgm-size" min="8" max="60" value="18" oninput="liveUpdateCov('pgm')"><span id="cov-pgm-size-v">18px</span></div>
+        <div class="form-col"><label>Bold</label><input type="checkbox" id="cov-pgm-bold" oninput="liveUpdateCov('pgm')"></div>
       </div>
-      <div style="display:flex;gap:8px;">
-        <button class="modal-add-btn" style="flex:1;" onclick="showCov('pgm')">Show on Output</button>
-        <button class="modal-add-btn" style="flex:1;background:#333;" onclick="hideCov('pgm')">Hide</button>
+      <div class="btn-row">
+        <button class="modal-btn" onclick="showCov('pgm')">Show on Output</button>
+        <button class="modal-btn grey-btn" onclick="hideCov('pgm')">Hide</button>
       </div>
     </div>
-    <p style="font-size:10px;color:var(--text3);">After showing, drag the overlay directly on the monitor to reposition it.</p>
   </div>
 </div>
 </div>
@@ -317,73 +325,190 @@
 <div class="modal-bg" id="score-modal">
 <div class="modal modal-wide">
   <div class="modal-hdr"><span>Score Bar</span><button class="modal-x" onclick="closeModal('score-modal')">✕</button></div>
-  <div class="modal-form active" style="padding:14px;gap:10px;">
-    <p class="yt-note">Score bar is controlled live from the Score Controller page. Open <b>scores.html</b> in another tab — someone else can control scores while you switch. Drag the bar directly on the monitor.</p>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-      <button class="modal-add-btn" style="background:#003a6a;" onclick="openScoreController()">Open Score Controller ↗</button>
-      <span style="font-size:10px;color:var(--text3);">Opens scores.html in a new tab</span>
-    </div>
-    <div class="cfg-section">
-      <div class="cfg-lbl">SCORE BAR STYLE</div>
-      <div class="cfg-row"><label>Home team colour</label><input type="color" id="score-home-col" value="#cc0000" oninput="renderScoreBars()"></div>
-      <div class="cfg-row"><label>Away team colour</label><input type="color" id="score-away-col" value="#0044cc" oninput="renderScoreBars()"></div>
-      <div class="cfg-row"><label>Bar position</label>
-        <select id="score-pos" onchange="renderScoreBars()">
-          <option value="bottom">Bottom</option>
-          <option value="top">Top</option>
-        </select>
+  <div class="modal-body">
+    <p class="note-box">Score bar syncs with <b>scores.html</b> in real time via BroadcastChannel. Open it in another tab for live control.</p>
+    <div class="btn-row"><button class="modal-btn blue-btn" onclick="openScoreController()">Open Score Controller ↗</button></div>
+    <div class="form-section">
+      <div class="form-section-lbl">TEAM SETTINGS</div>
+      <div class="form-row">
+        <div class="form-col"><label>Home team</label><input type="text" id="score-home-name" value="HOME" oninput="manualScoreUpdate()"></div>
+        <div class="form-col"><label>Home colour</label><input type="color" id="score-home-col" value="#cc0000" oninput="manualScoreUpdate()"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-col"><label>Away team</label><input type="text" id="score-away-name" value="AWAY" oninput="manualScoreUpdate()"></div>
+        <div class="form-col"><label>Away colour</label><input type="color" id="score-away-col" value="#0044cc" oninput="manualScoreUpdate()"></div>
       </div>
     </div>
-    <div class="cfg-section">
-      <div class="cfg-lbl">SHOW / HIDE</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <button class="modal-add-btn" style="flex:1;" onclick="showScore('prv')">Show on Preview</button>
-        <button class="modal-add-btn" style="flex:1;background:#880000;" onclick="showScore('pgm')">Show on Output</button>
-        <button class="modal-add-btn" style="flex:1;background:#2a2a2a;border:1px solid #555;" onclick="hideScore('all')">Hide All</button>
-      </div>
-    </div>
-    <div class="cfg-section">
-      <div class="cfg-lbl">MANUAL OVERRIDE (if no score controller)</div>
-      <div class="cfg-row"><label>Home team</label><input type="text" id="score-home-name" value="HOME" class="cfg-inp" style="width:120px;" oninput="manualScoreUpdate()"></div>
-      <div class="cfg-row"><label>Away team</label><input type="text" id="score-away-name" value="AWAY" class="cfg-inp" style="width:120px;" oninput="manualScoreUpdate()"></div>
-      <div class="cfg-row">
-        <label>Home score</label>
-        <div style="display:flex;gap:4px;align-items:center;">
-          <button class="score-adj-btn" onclick="adjustScore('home',-1)">−</button>
-          <span id="score-home-val" style="font-size:14px;font-weight:700;min-width:24px;text-align:center;">0</span>
-          <button class="score-adj-btn" onclick="adjustScore('home',1)">+</button>
+    <div class="form-section">
+      <div class="form-section-lbl">SCORES</div>
+      <div class="score-controls-row">
+        <div class="score-ctrl">
+          <span class="score-ctrl-lbl">HOME</span>
+          <div class="score-adj-row">
+            <button class="adj-btn" onclick="adjScore('home',-1)">−</button>
+            <span class="score-big" id="score-home-val">0</span>
+            <button class="adj-btn" onclick="adjScore('home',1)">+</button>
+          </div>
         </div>
-        <label>Away score</label>
-        <div style="display:flex;gap:4px;align-items:center;">
-          <button class="score-adj-btn" onclick="adjustScore('away',-1)">−</button>
-          <span id="score-away-val" style="font-size:14px;font-weight:700;min-width:24px;text-align:center;">0</span>
-          <button class="score-adj-btn" onclick="adjustScore('away',1)">+</button>
+        <div class="score-ctrl">
+          <span class="score-ctrl-lbl">AWAY</span>
+          <div class="score-adj-row">
+            <button class="adj-btn" onclick="adjScore('away',-1)">−</button>
+            <span class="score-big" id="score-away-val">0</span>
+            <button class="adj-btn" onclick="adjScore('away',1)">+</button>
+          </div>
+        </div>
+        <div class="score-ctrl">
+          <span class="score-ctrl-lbl">PERIOD</span>
+          <input type="text" id="score-period" value="Q1" style="width:60px;text-align:center;font-size:16px;font-weight:700;" oninput="manualScoreUpdate()">
         </div>
       </div>
-      <div class="cfg-row"><label>Period / Info</label><input type="text" id="score-period" value="Q1" class="cfg-inp" style="width:80px;" oninput="manualScoreUpdate()"></div>
+      <div class="period-btns">
+        <button class="period-btn" onclick="setPeriod('Q1')">Q1</button>
+        <button class="period-btn" onclick="setPeriod('Q2')">Q2</button>
+        <button class="period-btn" onclick="setPeriod('Q3')">Q3</button>
+        <button class="period-btn" onclick="setPeriod('Q4')">Q4</button>
+        <button class="period-btn" onclick="setPeriod('HT')">HT</button>
+        <button class="period-btn" onclick="setPeriod('FT')">FT</button>
+        <button class="period-btn" onclick="setPeriod('OT')">OT</button>
+        <button class="period-btn" onclick="adjScore('home',0,true);adjScore('away',0,true)">Reset</button>
+      </div>
     </div>
+    <div class="form-section">
+      <div class="form-section-lbl">DISPLAY</div>
+      <div class="form-row">
+        <div class="form-col"><label>Position</label>
+          <select id="score-pos" onchange="manualScoreUpdate()"><option value="bottom">Bottom</option><option value="top">Top</option></select>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="modal-btn" onclick="showScore('prv')">Show Preview</button>
+        <button class="modal-btn red-btn" onclick="showScore('pgm')">Show Output</button>
+        <button class="modal-btn" onclick="showScore('both')">Show Both</button>
+        <button class="modal-btn grey-btn" onclick="hideScore('all')">Hide All</button>
+      </div>
+    </div>
+    <!-- Live preview of score bar -->
+    <div class="form-section">
+      <div class="form-section-lbl">PREVIEW</div>
+      <div id="score-bar-preview" style="border-radius:2px;overflow:hidden;"></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- REPLAY CONFIG -->
+<div class="modal-bg" id="replay-modal">
+<div class="modal modal-wide">
+  <div class="modal-hdr"><span>Replay Settings</span><button class="modal-x" onclick="closeModal('replay-modal')">✕</button></div>
+  <div class="modal-body">
+    <div class="form-section">
+      <div class="form-section-lbl">STINGER TRANSITION</div>
+      <p class="note-box">A stinger plays over the cut when transitioning to/from replay. Upload a video (.mp4/.webm) or use the default CSS flash.</p>
+      <label>Stinger video file (optional)</label>
+      <input type="file" id="stinger-pick" accept="video/mp4,video/webm">
+      <div class="btn-row">
+        <button class="modal-btn" onclick="loadStinger()">Load Stinger</button>
+        <button class="modal-btn grey-btn" onclick="clearStinger()">Use Default Flash</button>
+      </div>
+      <div id="stinger-status" style="font-size:10px;color:var(--text3);margin-top:4px;">Using default CSS flash stinger</div>
+    </div>
+    <div class="form-section">
+      <div class="form-section-lbl">REPLAY CONTROLS</div>
+      <div class="replay-stats-grid">
+        <div class="rsg"><div class="rsg-l">VIDEO TIME</div><div class="rsg-v mono" id="buf-disp">--:--:--</div></div>
+        <div class="rsg"><div class="rsg-l">SPEED</div><div class="rsg-v mono" id="spd-disp">1.0x</div></div>
+        <div class="rsg"><div class="rsg-l">MARK IN</div><div class="rsg-v mono" id="in-disp">--:--:--</div></div>
+        <div class="rsg"><div class="rsg-l">MARK OUT</div><div class="rsg-v mono" id="out-disp">--:--:--</div></div>
+      </div>
+      <div class="replay-status-bar" id="replay-status-bar">IDLE — load a video input first</div>
+      <div class="btn-row">
+        <button class="modal-btn amber-btn" onclick="doMarkIn()">◀ Mark In  I</button>
+        <button class="modal-btn amber-btn" onclick="doMarkOut()">Mark Out ▶  O</button>
+      </div>
+      <div class="btn-row">
+        <button class="modal-btn green-btn" onclick="doReplayPlay()">▶ Play  P</button>
+        <button class="modal-btn blue-btn" onclick="doReplayLoop()">⟳ Loop  L</button>
+        <button class="modal-btn grey-btn" onclick="doReplayStop()">■ Stop  S</button>
+        <button class="modal-btn green-btn" onclick="doReturnLive()">▶ Live  R</button>
+      </div>
+      <div class="speed-row">
+        <button class="spd-btn" onclick="setSpeed(0.25)">0.25x</button>
+        <button class="spd-btn" onclick="setSpeed(0.5)">0.5x  [</button>
+        <button class="spd-btn active" onclick="setSpeed(1.0)">1x  ]</button>
+        <button class="spd-btn" onclick="setSpeed(2.0)">2x</button>
+      </div>
+    </div>
+    <div class="form-section">
+      <div class="form-section-lbl">REPLAY LOG</div>
+      <div class="replay-log" id="replay-log"></div>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- CONFIG -->
+<div class="modal-bg" id="config-modal">
+<div class="modal modal-wide">
+  <div class="modal-hdr"><span>Configuration</span><button class="modal-x" onclick="closeModal('config-modal')">✕</button></div>
+  <div class="modal-body">
+    <div class="form-section">
+      <div class="form-section-lbl">DEFAULT TRANSITION</div>
+      <div class="form-row">
+        <div class="form-col"><label>Type</label>
+          <select id="cfg-trans"><option>Cut</option><option>Fade</option><option>Wipe</option><option>Fly</option><option>Zoom</option></select>
+        </div>
+        <div class="form-col"><label>Duration (ms)</label><input type="number" id="cfg-dur" value="1000" min="100" max="5000" step="100" class="cfg-inp"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-col"><label>FTB duration (ms)</label><input type="number" id="cfg-ftb" value="500" min="100" max="3000" class="cfg-inp"></div>
+        <div class="form-col"><label>LT fade (ms)</label><input type="number" id="cfg-lt" value="400" min="0" max="2000" class="cfg-inp"></div>
+      </div>
+    </div>
+    <div class="form-section">
+      <div class="form-section-lbl">CUSTOM F-KEY TRANSITIONS (F6–F12)</div>
+      <div id="custom-trans-list"></div>
+      <button class="modal-btn grey-btn" style="margin-top:6px;" onclick="addCustomTrans()">+ Add Slot</button>
+    </div>
+    <button class="modal-btn green-btn" style="margin-top:8px;" onclick="saveConfig()">Save &amp; Apply</button>
   </div>
 </div>
 </div>
 
 <!-- SHORTCUTS -->
 <div class="modal-bg" id="shortcuts-modal">
-<div class="modal modal-narrow">
+<div class="modal">
   <div class="modal-hdr"><span>Keyboard Shortcuts</span><button class="modal-x" onclick="closeModal('shortcuts-modal')">✕</button></div>
-  <table class="sk-table">
-    <tr><td class="sk-k">1 – 9</td><td>Send to Preview</td></tr>
-    <tr><td class="sk-k">Ctrl + 1–9</td><td>Cut direct to Output</td></tr>
-    <tr><td class="sk-k">Space</td><td>Cut / Transition</td></tr>
-    <tr><td class="sk-k">A</td><td>Auto transition</td></tr>
-    <tr><td class="sk-k">B</td><td>Fade to Black / Up</td></tr>
-    <tr><td class="sk-k">F1–F5</td><td>Transition type</td></tr>
-    <tr><td class="sk-k">F6–F12</td><td>Custom transitions</td></tr>
-    <tr><td class="sk-k">I / O</td><td>Replay: Mark In / Out</td></tr>
-    <tr><td class="sk-k">P / L</td><td>Replay: Play / Loop</td></tr>
-    <tr><td class="sk-k">S / R</td><td>Replay: Stop / Return Live</td></tr>
-    <tr><td class="sk-k">[ / ]</td><td>Speed 0.5x / 1x</td></tr>
-    <tr><td class="sk-k">Esc</td><td>Close modal</td></tr>
-  </table>
+  <div class="modal-body">
+    <table class="sk-table">
+      <tr><td class="sk-k">1 – 9</td><td>Send to Preview</td></tr>
+      <tr><td class="sk-k">Ctrl+1–9</td><td>Cut direct to Output</td></tr>
+      <tr><td class="sk-k">Space</td><td>Cut / Transition</td></tr>
+      <tr><td class="sk-k">A</td><td>Auto transition</td></tr>
+      <tr><td class="sk-k">B</td><td>Fade to Black / Up</td></tr>
+      <tr><td class="sk-k">F1–F5</td><td>Select transition type</td></tr>
+      <tr><td class="sk-k">F6–F12</td><td>Custom transitions</td></tr>
+      <tr><td class="sk-k">I / O</td><td>Replay: Mark In / Out</td></tr>
+      <tr><td class="sk-k">P / L</td><td>Replay: Play / Loop</td></tr>
+      <tr><td class="sk-k">S / R</td><td>Replay: Stop / Return Live</td></tr>
+      <tr><td class="sk-k">[ / ]</td><td>Speed 0.5x / 1x</td></tr>
+      <tr><td class="sk-k">Esc</td><td>Close modal</td></tr>
+    </table>
+  </div>
+</div>
+</div>
+
+<!-- TRANS CONFIG POPUP -->
+<div class="modal-bg" id="trans-config-modal">
+<div class="modal" style="width:320px;">
+  <div class="modal-hdr"><span id="tc-modal-title">Fade Config</span><button class="modal-x" onclick="closeModal('trans-config-modal')">✕</button></div>
+  <div class="modal-body">
+    <label>Duration (ms)</label>
+    <input type="number" id="tc-dur" value="1000" min="100" max="5000" step="100">
+    <label>Stinger for this transition</label>
+    <select id="tc-stinger"><option value="none">None</option><option value="default">Default flash</option><option value="custom">Custom (loaded in Replay)</option></select>
+    <button class="modal-btn" onclick="saveTransConfig()">Apply</button>
+  </div>
 </div>
 </div>
 
