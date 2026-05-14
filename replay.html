@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LiveSim — Replay Manager</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{--bg:#111;--bg2:#1a1a1a;--bg3:#252525;--bg4:#333;--text:#e0e0e0;--text2:#aaa;--text3:#666;--red:#cc2200;--red2:#ff3300;--green:#00aa44;--green2:#00cc55;--amber:#cc8800;--blue:#0066cc;--blue2:#4499ff;--prv:#00aa44;--font:'Segoe UI',Arial,sans-serif;}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;}
+.mono{font-family:'Courier New',monospace!important;}
+
+/* HEADER */
+.hdr{background:#0a0a0a;border-bottom:2px solid #000;padding:0 16px;height:36px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-shrink:0;}
+.hdr-title{font-size:15px;font-weight:700;color:#fff;letter-spacing:.02em;}
+.hdr-sub{font-size:10px;color:var(--text3);}
+.conn-status{font-size:10px;padding:3px 12px;border-radius:12px;font-weight:600;flex-shrink:0;}
+.conn-status.ok{background:rgba(0,170,68,.15);color:#00cc55;border:1px solid #004422;}
+.conn-status.err{background:rgba(204,34,0,.15);color:#ff5533;border:1px solid #440000;}
+
+/* LAYOUT */
+.body{display:grid;grid-template-columns:1fr 300px;height:calc(100vh - 36px);overflow:hidden;}
+.left-col{display:flex;flex-direction:column;overflow:hidden;border-right:1px solid #222;}
+.right-col{display:flex;flex-direction:column;overflow:hidden;background:var(--bg2);}
+
+/* STATUS STRIP */
+.status-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:#000;flex-shrink:0;}
+.ss-item{background:var(--bg2);padding:8px 12px;}
+.ss-lbl{font-size:8px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px;}
+.ss-val{font-size:15px;font-weight:600;color:var(--text);font-variant-numeric:tabular-nums;}
+.ss-val.playing{color:var(--green2);}
+.ss-val.looping{color:var(--blue2);}
+.ss-val.idle{color:var(--text3);}
+
+/* STATUS BAR */
+.rpl-status{background:#0a0a0a;border-bottom:1px solid #000;border-top:1px solid #000;padding:5px 12px;font-size:11px;color:var(--text3);text-align:center;flex-shrink:0;}
+.rpl-status.playing{color:var(--green2);}
+.rpl-status.looping{color:var(--blue2);}
+.rpl-status.err{color:var(--red2);}
+
+/* TIMELINE */
+.timeline-section{padding:14px;flex-shrink:0;background:var(--bg2);border-bottom:1px solid #1a1a1a;}
+.tl-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.tl-title{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;}
+.tl-source{font-size:11px;color:var(--text2);}
+.tl-wrap{position:relative;height:44px;background:#0a0a0a;border:1px solid #222;border-radius:2px;overflow:hidden;cursor:crosshair;}
+/* Progress (current position) */
+.tl-progress{position:absolute;top:0;bottom:0;left:0;background:rgba(0,100,200,.15);pointer-events:none;}
+/* Clip zone (between marks) */
+.tl-clip{position:absolute;top:0;bottom:0;background:rgba(0,200,100,.2);border-left:2px solid var(--green);border-right:2px solid var(--amber);pointer-events:none;}
+/* Current position line */
+.tl-cursor{position:absolute;top:0;bottom:0;width:2px;background:#fff;pointer-events:none;box-shadow:0 0 4px rgba(255,255,255,.5);}
+/* Mark labels */
+.tl-marks{display:flex;justify-content:space-between;margin-top:4px;}
+.tl-mark-lbl{font-size:9px;color:var(--text3);font-family:'Courier New',monospace;}
+.tl-mark-lbl.in{color:var(--green2);}
+.tl-mark-lbl.out{color:var(--amber);}
+/* time labels on bar */
+.tl-time-start,.tl-time-end{position:absolute;bottom:3px;font-size:8px;color:#333;font-family:'Courier New',monospace;}
+.tl-time-start{left:4px;}
+.tl-time-end{right:4px;}
+.tl-current-label{position:absolute;top:4px;font-size:8px;color:#fff;font-family:'Courier New',monospace;transform:translateX(-50%);background:rgba(0,0,0,.7);padding:0 3px;border-radius:1px;}
+/* Clip duration info */
+.clip-info{font-size:10px;color:var(--text3);margin-top:6px;text-align:center;}
+
+/* CONTROLS */
+.controls-section{padding:12px 14px;flex-shrink:0;display:flex;flex-direction:column;gap:8px;border-bottom:1px solid #1a1a1a;}
+.ctrl-row{display:flex;gap:5px;flex-wrap:wrap;}
+.ctrl-btn{flex:1;min-width:70px;padding:8px 6px;border-radius:2px;border:none;cursor:pointer;font-size:11px;font-weight:600;font-family:var(--font);text-align:center;transition:all .1s;display:flex;flex-direction:column;align-items:center;gap:2px;}
+.ctrl-btn:active{transform:scale(.95);}
+.ctrl-btn .kb{font-size:8px;font-weight:400;opacity:.55;}
+.btn-mark{background:#2a1a00;border:1px solid #554400;color:var(--amber);}
+.btn-mark:hover{background:#3a2500;border-color:var(--amber);}
+.btn-play{background:#002a00;border:1px solid #005500;color:var(--green2);}
+.btn-play:hover{background:#003a00;border-color:var(--green);}
+.btn-loop{background:#001a33;border:1px solid #003366;color:var(--blue2);}
+.btn-loop:hover{background:#002244;border-color:var(--blue);}
+.btn-stop{background:#1a1a1a;border:1px solid #333;color:var(--text2);}
+.btn-stop:hover{background:#252525;color:var(--text);}
+.btn-live{background:#002a00;border:1px solid #005500;color:var(--green2);}
+.btn-live:hover{background:#003a00;}
+/* speed */
+.speed-row{display:flex;gap:3px;}
+.spd{flex:1;padding:6px 0;background:#1a1a1a;border:1px solid #2a2a2a;color:var(--text3);font-size:10px;cursor:pointer;font-family:var(--font);border-radius:1px;text-align:center;}
+.spd:hover{background:#252525;color:var(--text2);}
+.spd.active{background:#003a6a;border-color:var(--blue);color:#fff;}
+
+/* SAVE CLIP */
+.save-section{padding:10px 14px;flex-shrink:0;border-bottom:1px solid #1a1a1a;display:flex;flex-direction:column;gap:6px;}
+.sec-title{font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;}
+.save-row{display:flex;gap:6px;}
+.clip-name-inp{flex:1;background:#0a0a0a;border:1px solid #333;color:var(--text);padding:6px 10px;font-size:12px;font-family:var(--font);border-radius:2px;}
+.clip-name-inp:focus{outline:none;border-color:#555;}
+.save-btn{background:var(--blue);border:none;color:#fff;padding:6px 16px;cursor:pointer;font-size:12px;font-weight:600;border-radius:2px;font-family:var(--font);}
+.save-btn:hover{background:#0077ee;}
+
+/* CLIPS LIST */
+.clips-section{flex:1;overflow:hidden;display:flex;flex-direction:column;}
+.clips-hdr{padding:8px 14px;font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;background:#0a0a0a;border-bottom:1px solid #1a1a1a;flex-shrink:0;display:flex;align-items:center;justify-content:space-between;}
+.clips-body{flex:1;overflow-y:auto;padding:6px;}
+.clip-item{display:flex;align-items:center;gap:6px;background:var(--bg3);border:1px solid #222;padding:8px 10px;border-radius:2px;margin-bottom:3px;cursor:pointer;transition:background .1s;}
+.clip-item:hover{background:#2a2a2a;}
+.clip-item.active-clip{border-color:var(--green);background:#001a00;}
+.clip-col{display:flex;flex-direction:column;flex:1;gap:1px;}
+.clip-name{font-size:12px;font-weight:600;color:var(--text);}
+.clip-meta{font-size:10px;color:var(--text3);font-family:'Courier New',monospace;}
+.clip-btns{display:flex;gap:4px;flex-shrink:0;}
+.clip-act{background:transparent;border:1px solid #333;color:var(--text2);padding:3px 10px;cursor:pointer;font-size:10px;border-radius:2px;transition:all .1s;}
+.clip-act.play{border-color:#004422;color:var(--green2);}
+.clip-act.loop{border-color:#001a44;color:var(--blue2);}
+.clip-act:hover{filter:brightness(1.3);}
+.clip-del{background:transparent;border:none;color:#333;cursor:pointer;font-size:14px;padding:2px 6px;}
+.clip-del:hover{color:var(--red2);}
+.no-clips{color:var(--text3);font-size:11px;text-align:center;padding:20px;line-height:1.6;}
+
+/* RIGHT: LOG */
+.right-col-hdr{padding:8px 12px;font-size:9px;color:var(--text3);text-transform:uppercase;letter-spacing:.1em;background:#0a0a0a;border-bottom:1px solid #1a1a1a;flex-shrink:0;}
+.rpl-log{flex:1;overflow-y:auto;padding:6px 10px;font-family:'Courier New',monospace;font-size:10px;color:var(--text3);}
+.rl-entry{padding:2px 0;border-bottom:1px solid #1a1a1a;}
+.rl-ts{color:#222;}
+.rl-msg.go{color:var(--green2);}
+.rl-msg.mark{color:var(--amber);}
+.rl-msg.err{color:var(--red2);}
+
+/* NOTE */
+.note{font-size:10px;color:var(--amber);background:#1a1400;border:1px solid #332800;padding:8px 12px;line-height:1.5;flex-shrink:0;}
+.bc-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--green);margin-right:4px;vertical-align:middle;animation:blink 1.5s infinite;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div>
+    <div class="hdr-title">↺ Replay Manager</div>
+    <div class="hdr-sub">LiveSim — keep alongside main switcher tab</div>
+  </div>
+  <div id="conn-status" class="conn-status err">Connecting...</div>
+</div>
+
+<div class="body">
+  <div class="left-col">
+
+    <!-- STATUS STRIP -->
+    <div class="status-strip">
+      <div class="ss-item"><div class="ss-lbl">Source</div><div class="ss-val" id="ss-source">—</div></div>
+      <div class="ss-item"><div class="ss-lbl">Video Time</div><div class="ss-val mono" id="ss-time">--:--:--</div></div>
+      <div class="ss-item"><div class="ss-lbl">Speed</div><div class="ss-val mono" id="ss-speed">1.0x</div></div>
+      <div class="ss-item"><div class="ss-lbl">State</div><div class="ss-val idle" id="ss-state">IDLE</div></div>
+    </div>
+
+    <!-- STATUS BAR -->
+    <div class="rpl-status" id="rpl-status">Waiting for main app connection...</div>
+
+    <!-- TIMELINE -->
+    <div class="timeline-section">
+      <div class="tl-header">
+        <span class="tl-title">Buffer Timeline</span>
+        <span class="tl-source" id="tl-source">No video in output</span>
+      </div>
+      <div class="tl-wrap" id="tl-wrap" onclick="tlClick(event)">
+        <div class="tl-progress" id="tl-progress" style="width:0%;"></div>
+        <div class="tl-clip" id="tl-clip" style="display:none;"></div>
+        <div class="tl-cursor" id="tl-cursor" style="left:0%;"></div>
+        <span class="tl-time-start mono" id="tl-t-start">00:00:00</span>
+        <span class="tl-time-end mono" id="tl-t-end">00:00:00</span>
+        <span class="tl-current-label mono" id="tl-t-cur" style="left:0%;"></span>
+      </div>
+      <div class="tl-marks">
+        <span class="tl-mark-lbl in" id="tl-in-lbl">IN: --:--:--</span>
+        <span class="tl-mark-lbl" id="tl-dur-lbl">Clip: -- s</span>
+        <span class="tl-mark-lbl out" id="tl-out-lbl">OUT: --:--:--</span>
+      </div>
+    </div>
+
+    <!-- CONTROLS -->
+    <div class="controls-section">
+      <div class="ctrl-row">
+        <button class="ctrl-btn btn-mark" onclick="cmd('mark_in')">◀ Mark In<span class="kb">I</span></button>
+        <button class="ctrl-btn btn-mark" onclick="cmd('mark_out')">Mark Out ▶<span class="kb">O</span></button>
+      </div>
+      <div class="ctrl-row">
+        <button class="ctrl-btn btn-play" onclick="cmd('play')">▶ Play<span class="kb">P</span></button>
+        <button class="ctrl-btn btn-loop" onclick="cmd('loop')">⟳ Loop<span class="kb">L</span></button>
+        <button class="ctrl-btn btn-stop" onclick="cmd('stop')">■ Stop<span class="kb">S</span></button>
+        <button class="ctrl-btn btn-live" onclick="cmd('live')">▶ Live<span class="kb">R</span></button>
+      </div>
+      <div class="speed-row">
+        <button class="spd" onclick="setSpeedLocal(0.25)">0.25x</button>
+        <button class="spd" onclick="setSpeedLocal(0.5)">0.5x</button>
+        <button class="spd active" id="spd-1" onclick="setSpeedLocal(1.0)">1x</button>
+        <button class="spd" onclick="setSpeedLocal(2.0)">2x</button>
+      </div>
+    </div>
+
+    <!-- SAVE CLIP -->
+    <div class="save-section">
+      <div class="sec-title">Save Current Marks as Clip</div>
+      <div class="save-row">
+        <input type="text" class="clip-name-inp" id="clip-name-inp" placeholder="e.g. Goal - 12:34 min">
+        <button class="save-btn" onclick="saveClipLocal()">Save</button>
+      </div>
+    </div>
+
+    <!-- CLIPS LIST -->
+    <div class="clips-section">
+      <div class="clips-hdr">
+        <span>Saved Clips (<span id="clips-count">0</span>)</span>
+        <span id="clips-hint" style="color:var(--text3);font-size:9px;">click clip to load marks</span>
+      </div>
+      <div class="clips-body" id="clips-body">
+        <div class="no-clips">No clips saved yet.<br>Mark In → Mark Out → Save to build a clip library.</div>
+      </div>
+    </div>
+
+  </div><!-- /left-col -->
+
+  <div class="right-col">
+    <div class="note"><span class="bc-dot"></span>Connected via BroadcastChannel — same browser, any tab. Controls affect the main switcher in real time.</div>
+    <div class="right-col-hdr">Replay Log</div>
+    <div class="rpl-log" id="rpl-log"></div>
+  </div>
+</div>
+
+<script>
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let ST = {
+  currentTime: null, duration: null,
+  markIn: null, markOut: null,
+  speed: 1.0, replayState: 'idle',
+  pgmName: null, savedClips: [],
+  activeClipId: null,
+};
+
+let bc = null;
+try {
+  bc = new BroadcastChannel('livesim_replay');
+  bc.onmessage = e => {
+    if (e.data.type === 'status') {
+      updateFromStatus(e.data.data);
+    }
+  };
+  document.getElementById('conn-status').textContent = 'Connected';
+  document.getElementById('conn-status').className = 'conn-status ok';
+  // Request initial status
+  bc.postMessage({ type: 'command', cmd: 'request_status' });
+} catch(err) {
+  document.getElementById('conn-status').textContent = 'BroadcastChannel not supported';
+}
+
+function cmd(command, data) {
+  if (bc) bc.postMessage({ type: 'command', cmd: command, data });
+  rlog(command.toUpperCase(), 'go');
+}
+
+function setSpeedLocal(v) {
+  ST.speed = v;
+  document.querySelectorAll('.spd').forEach(b => b.classList.remove('active'));
+  const m = { 0.25: 0, 0.5: 1, 1.0: 2, 2.0: 3 };
+  if (m[v] !== undefined) document.querySelectorAll('.spd')[m[v]].classList.add('active');
+  cmd('set_speed', { speed: v });
+}
+
+// ─── STATUS UPDATE ────────────────────────────────────────────────────────────
+function updateFromStatus(data) {
+  Object.assign(ST, data);
+
+  // Status strip
+  document.getElementById('ss-source').textContent = data.pgmName || '—';
+  document.getElementById('ss-time').textContent = fmtT(data.currentTime);
+  document.getElementById('ss-speed').textContent = (data.speed || 1) + 'x';
+  const stateEl = document.getElementById('ss-state');
+  stateEl.textContent = (data.replayState || 'IDLE').toUpperCase();
+  stateEl.className = 'ss-val ' + (data.replayState || 'idle');
+
+  // Status bar
+  const bar = document.getElementById('rpl-status');
+  if (data.replayState === 'playing') { bar.textContent = `▶ PLAYING  ${fmtT(data.markIn)} → ${fmtT(data.markOut)}  @ ${data.speed}x`; bar.className = 'rpl-status playing'; }
+  else if (data.replayState === 'looping') { bar.textContent = `⟳ LOOPING  ${fmtT(data.markIn)} → ${fmtT(data.markOut)}  @ ${data.speed}x`; bar.className = 'rpl-status looping'; }
+  else { bar.textContent = data.pgmName ? `Source: ${data.pgmName} — ${fmtT(data.currentTime)}` : 'No video in output'; bar.className = 'rpl-status'; }
+
+  // Timeline source
+  document.getElementById('tl-source').textContent = data.pgmName || 'No video in output';
+  document.getElementById('tl-t-end').textContent = fmtT(data.duration);
+
+  // Timeline progress
+  const dur = data.duration || 1;
+  const pct = data.currentTime != null ? Math.min(100, (data.currentTime / dur) * 100) : 0;
+  document.getElementById('tl-progress').style.width = pct + '%';
+  document.getElementById('tl-cursor').style.left = pct + '%';
+  document.getElementById('tl-t-cur').textContent = fmtT(data.currentTime);
+  document.getElementById('tl-t-cur').style.left = pct + '%';
+  document.getElementById('tl-t-start').textContent = fmtT(0);
+
+  // Clip zone
+  const clip = document.getElementById('tl-clip');
+  if (data.markIn != null && data.markOut != null && data.duration) {
+    const inPct = (data.markIn / dur) * 100;
+    const outPct = (data.markOut / dur) * 100;
+    clip.style.display = 'block';
+    clip.style.left = inPct + '%';
+    clip.style.width = (outPct - inPct) + '%';
+  } else {
+    clip.style.display = 'none';
+  }
+
+  // Mark labels
+  document.getElementById('tl-in-lbl').textContent = 'IN: ' + (data.markIn != null ? fmtT(data.markIn) : '--:--:--');
+  document.getElementById('tl-out-lbl').textContent = 'OUT: ' + (data.markOut != null ? fmtT(data.markOut) : '--:--:--');
+  if (data.markIn != null && data.markOut != null) {
+    const clipDur = data.markOut - data.markIn;
+    document.getElementById('tl-dur-lbl').textContent = `Clip: ${fmtT(clipDur)} @ ${data.speed}x = ${fmtT(clipDur/data.speed)}`;
+  } else {
+    document.getElementById('tl-dur-lbl').textContent = 'Clip: -- s';
+  }
+
+  // Clips list
+  if (data.savedClips) {
+    const changed = JSON.stringify(data.savedClips) !== JSON.stringify(ST.savedClips);
+    ST.savedClips = data.savedClips;
+    if (changed) renderClips();
+  }
+
+  // Speed buttons
+  document.querySelectorAll('.spd').forEach(b => b.classList.remove('active'));
+  const sm = { 0.25: 0, 0.5: 1, 1.0: 2, 2.0: 3 };
+  if (sm[data.speed] !== undefined) document.querySelectorAll('.spd')[sm[data.speed]].classList.add('active');
+}
+
+// ─── TIMELINE CLICK (scrub) ───────────────────────────────────────────────────
+function tlClick(e) {
+  // Timeline click: if duration known, can set marks
+  // For now: do nothing (we can't scrub without write access to video)
+}
+
+// ─── CLIPS ───────────────────────────────────────────────────────────────────
+function saveClipLocal() {
+  if (ST.markIn == null || ST.markOut == null) { alert('Set Mark In and Mark Out first.'); return; }
+  const name = document.getElementById('clip-name-inp').value.trim() || `Clip ${Date.now()}`;
+  cmd('save_clip', { name, markIn: ST.markIn, markOut: ST.markOut, speed: ST.speed });
+  document.getElementById('clip-name-inp').value = '';
+  rlog('Saved clip: ' + name, 'go');
+}
+
+function renderClips() {
+  const body = document.getElementById('clips-body');
+  const count = document.getElementById('clips-count');
+  count.textContent = ST.savedClips.length;
+  if (!ST.savedClips.length) {
+    body.innerHTML = '<div class="no-clips">No clips saved yet.<br>Mark In → Mark Out → Save to build a clip library.</div>';
+    return;
+  }
+  body.innerHTML = ST.savedClips.map(c => {
+    const isActive = c.id === ST.activeClipId;
+    return `<div class="clip-item${isActive?' active-clip':''}" onclick="loadClip(${c.id})">
+      <div class="clip-col">
+        <div class="clip-name">${c.name}</div>
+        <div class="clip-meta">${fmtT(c.markIn)} → ${fmtT(c.markOut)} &nbsp;|&nbsp; ${fmtT(c.dur||c.markOut-c.markIn)} @ ${c.speed||1}x</div>
+      </div>
+      <div class="clip-btns">
+        <button class="clip-act play" onclick="event.stopPropagation();playClipLocal(${c.id},false)">▶</button>
+        <button class="clip-act loop" onclick="event.stopPropagation();playClipLocal(${c.id},true)">⟳</button>
+      </div>
+      <button class="clip-del" onclick="event.stopPropagation();deleteClipLocal(${c.id})">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function loadClip(id) {
+  ST.activeClipId = id;
+  cmd(id % 2 === 0 ? 'play_clip' : 'play_clip', { id }); // highlight locally
+  renderClips();
+}
+function playClipLocal(id, loop) { ST.activeClipId=id; cmd(loop?'loop_clip':'play_clip',{id}); renderClips(); }
+function deleteClipLocal(id) { if(!confirm('Delete this clip?'))return; cmd('delete_clip',{id}); }
+
+// ─── LOG ─────────────────────────────────────────────────────────────────────
+function rlog(msg, type) {
+  const log = document.getElementById('rpl-log');
+  const div = document.createElement('div'); div.className = 'rl-entry';
+  div.innerHTML = `<span class="rl-ts">${new Date().toTimeString().slice(0,8)} </span><span class="rl-msg ${type||''}">${msg}</span>`;
+  log.appendChild(div); log.scrollTop = log.scrollHeight;
+}
+
+// ─── KEYBOARD ────────────────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  const tag = document.activeElement?.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  switch(e.key) {
+    case 'i': case 'I': cmd('mark_in'); break;
+    case 'o': case 'O': cmd('mark_out'); break;
+    case 'p': case 'P': cmd('play'); break;
+    case 'l': case 'L': cmd('loop'); break;
+    case 's': case 'S': cmd('stop'); break;
+    case 'r': case 'R': cmd('live'); break;
+    case '[': setSpeedLocal(0.5); break;
+    case ']': setSpeedLocal(1.0); break;
+  }
+});
+
+// ─── UTILS ───────────────────────────────────────────────────────────────────
+function p2(n) { return String(n).padStart(2, '0'); }
+function fmtT(s) {
+  if (s == null || isNaN(s)) return '--:--:--';
+  const n = Math.floor(Math.abs(s));
+  return p2(Math.floor(n/3600)) + ':' + p2(Math.floor((n%3600)/60)) + ':' + p2(n%60);
+}
+</script>
+</body>
+</html>

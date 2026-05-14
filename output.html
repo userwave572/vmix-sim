@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LiveSim — Program Output</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --green:#00aa44;--red:#cc2200;--amber:#cc8800;
+  --font:'Segoe UI',Arial,sans-serif;
+}
+
+html,body{
+  width:100%;height:100%;
+  background:#000;
+  overflow:hidden;
+  font-family:var(--font);
+}
+
+/* ── MAIN OUTPUT CONTAINER ── */
+.output-wrap{
+  position:fixed;inset:0;
+  display:flex;align-items:center;justify-content:center;
+  background:#000;
+}
+
+/* 16:9 content area, letterboxed */
+.output-screen{
+  position:relative;
+  /* Aspect ratio maintained by JS sizing */
+  background:#000;
+  overflow:hidden;
+}
+
+/* Media fills the screen */
+.output-screen video,
+.output-screen img,
+.output-screen .fill-div {
+  position:absolute;inset:0;
+  width:100%;height:100%;
+  object-fit:cover;
+  display:block;border:none;
+}
+.fill-div{display:flex;align-items:center;justify-content:center;}
+
+/* Colour fills */
+.col-bars{background:linear-gradient(90deg,#c00 0%,#cc0 17%,#0c0 33%,#0cc 50%,#00c 67%,#c0c 83%,#ccc 100%);}
+.col-black{background:#000;}
+.col-white{background:#fff;}
+
+/* Empty state */
+.output-empty{
+  position:absolute;inset:0;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:16px;color:#222;
+}
+.output-empty .logo{font-size:28px;font-weight:700;letter-spacing:.04em;}
+.output-empty .status{font-size:13px;letter-spacing:.1em;text-transform:uppercase;}
+
+/* ── LOWER THIRD ── */
+.lt-layer{position:absolute;inset:0;z-index:5;pointer-events:none;}
+.lt-overlay{position:absolute;display:flex;flex-direction:column;gap:2px;padding:clamp(6px,1.2vh,16px) clamp(8px,1.5vw,20px);}
+.lt-overlay.bottom-left{bottom:8%;left:0;align-items:flex-start;}
+.lt-overlay.bottom-right{bottom:8%;right:0;align-items:flex-end;}
+.lt-overlay.bottom-center{bottom:8%;left:50%;transform:translateX(-50%);align-items:center;}
+.lt-overlay.top-left{top:8%;left:0;align-items:flex-start;}
+.lt-overlay{animation:lt-in 400ms ease forwards;}
+@keyframes lt-in{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
+.lt-title{font-size:clamp(12px,2.2vw,32px);font-weight:700;padding:clamp(3px,.5vh,8px) clamp(8px,1.2vw,20px);display:inline-block;color:#fff;}
+.lt-sub{font-size:clamp(9px,1.5vw,22px);padding:clamp(2px,.3vh,6px) clamp(8px,1.2vw,20px);background:rgba(0,0,0,.65);display:inline-block;}
+
+/* ── SCORE BAR ── */
+.score-layer{position:absolute;left:0;right:0;z-index:6;}
+.score-layer.pos-bottom{bottom:0;}
+.score-layer.pos-top{top:0;}
+.score-bar{display:flex;align-items:stretch;height:clamp(28px,5vh,56px);}
+.sb-home,.sb-away{display:flex;align-items:center;padding:0 clamp(8px,1.5vw,24px);font-weight:700;font-size:clamp(11px,1.8vw,26px);color:#fff;flex:1;overflow:hidden;white-space:nowrap;}
+.sb-away{justify-content:flex-end;}
+.sb-center{display:flex;align-items:center;background:rgba(0,0,0,.9);padding:0 clamp(8px,1.5vw,24px);gap:clamp(4px,.8vw,12px);flex-shrink:0;}
+.sb-score{font-size:clamp(14px,2.8vw,42px);font-weight:700;color:#fff;font-variant-numeric:tabular-nums;}
+.sb-sep{color:rgba(255,255,255,.3);font-size:clamp(10px,1.8vw,28px);}
+.sb-period{font-size:clamp(8px,1.1vw,16px);color:rgba(255,255,255,.7);background:rgba(255,255,255,.12);padding:clamp(2px,.3vh,5px) clamp(5px,.8vw,12px);border-radius:3px;margin-left:clamp(4px,.6vw,10px);}
+
+/* ── CUSTOM TEXT OVERLAY ── */
+.cov-layer{
+  position:absolute;z-index:7;
+  padding:clamp(4px,.8vh,10px) clamp(8px,1.2vw,18px);
+  border-radius:2px;white-space:nowrap;
+  pointer-events:none;
+}
+
+/* ── FTB ── */
+.ftb-overlay{
+  position:absolute;inset:0;background:#000;
+  opacity:0;z-index:10;pointer-events:none;
+  transition:opacity 500ms ease;
+}
+.ftb-overlay.active{opacity:1;}
+
+/* ── REPLAY BADGE ── */
+.replay-badge{
+  position:absolute;top:clamp(8px,1.5vh,20px);right:clamp(8px,1.5vw,20px);
+  background:rgba(180,0,0,.9);color:#fff;
+  font-size:clamp(9px,1.3vw,18px);font-weight:700;
+  padding:clamp(3px,.5vh,8px) clamp(8px,1.2vw,16px);
+  border-radius:2px;z-index:8;letter-spacing:.1em;
+  display:none;
+}
+
+/* ── CONTROLS OVERLAY (top bar, shows on hover) ── */
+.ctrl-bar{
+  position:fixed;top:0;left:0;right:0;
+  height:44px;background:rgba(0,0,0,.85);
+  display:flex;align-items:center;padding:0 12px;gap:10px;
+  opacity:0;transition:opacity .25s;z-index:20;
+  backdrop-filter:blur(4px);
+}
+body:hover .ctrl-bar{opacity:1;}
+.ctrl-bar-title{font-size:13px;font-weight:700;color:#fff;letter-spacing:.04em;flex:1;}
+.ctrl-btn{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;padding:5px 14px;border-radius:2px;cursor:pointer;font-size:11px;font-family:var(--font);}
+.ctrl-btn:hover{background:rgba(255,255,255,.2);}
+.conn-pill{font-size:10px;padding:3px 10px;border-radius:10px;font-weight:600;}
+.conn-pill.ok{background:rgba(0,170,68,.25);color:#00cc55;border:1px solid #004422;}
+.conn-pill.err{background:rgba(204,34,0,.25);color:#ff5533;border:1px solid #440000;}
+
+/* ── SOURCE LABEL (bottom right, shows briefly on change) ── */
+.source-label{
+  position:fixed;bottom:clamp(8px,1.5vh,20px);right:clamp(8px,1.5vw,20px);
+  background:rgba(0,0,0,.7);color:rgba(255,255,255,.6);
+  font-size:clamp(9px,1.1vw,14px);padding:4px 10px;border-radius:2px;
+  z-index:9;opacity:0;transition:opacity .3s;pointer-events:none;
+  font-family:var(--font);letter-spacing:.04em;
+}
+.source-label.visible{opacity:1;}
+
+/* ── STANDBY SCREEN (when no source) ── */
+.standby{
+  position:absolute;inset:0;background:#000;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:12px;z-index:1;
+}
+.standby-logo{font-size:clamp(20px,4vw,52px);font-weight:700;color:#1a1a1a;letter-spacing:.06em;}
+.standby-txt{font-size:clamp(10px,1.5vw,18px);color:#111;letter-spacing:.15em;text-transform:uppercase;}
+.standby-conn{font-size:clamp(9px,1.1vw,14px);color:#222;letter-spacing:.08em;margin-top:8px;}
+</style>
+</head>
+<body>
+
+<!-- CONTROLS BAR (hover to reveal) -->
+<div class="ctrl-bar">
+  <span class="ctrl-bar-title">LiveSim — Program Output</span>
+  <span class="conn-pill err" id="conn-pill">Connecting...</span>
+  <button class="ctrl-btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+  <button class="ctrl-btn" onclick="window.close()">✕ Close</button>
+</div>
+
+<!-- SOURCE LABEL -->
+<div class="source-label" id="source-label"></div>
+
+<!-- MAIN OUTPUT -->
+<div class="output-wrap" id="output-wrap">
+  <div class="output-screen" id="output-screen">
+
+    <!-- STANDBY (shown when no source) -->
+    <div class="standby" id="standby">
+      <div class="standby-logo">LIVESIM</div>
+      <div class="standby-txt">Program Output</div>
+      <div class="standby-conn" id="standby-conn">Waiting for main switcher...</div>
+    </div>
+
+    <!-- MEDIA AREA (filled dynamically) -->
+    <div id="media-area" style="position:absolute;inset:0;z-index:2;"></div>
+
+    <!-- OVERLAYS -->
+    <div class="lt-layer" id="lt-layer"></div>
+    <div class="score-layer" id="score-layer" style="display:none;"></div>
+    <div class="cov-layer" id="cov-layer" style="display:none;"></div>
+    <div class="replay-badge" id="replay-badge"></div>
+    <div class="ftb-overlay" id="ftb-overlay"></div>
+
+  </div>
+</div>
+
+<script>
+// ─── SIZING (maintain 16:9 with letterbox) ───────────────────────────────────
+function resize() {
+  const wrap = document.getElementById('output-wrap');
+  const screen = document.getElementById('output-screen');
+  const ww = wrap.clientWidth, wh = wrap.clientHeight;
+  let w, h;
+  if (ww / wh > 16/9) {
+    h = wh; w = h * 16/9;
+  } else {
+    w = ww; h = w * 9/16;
+  }
+  screen.style.width  = Math.round(w) + 'px';
+  screen.style.height = Math.round(h) + 'px';
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ─── FULLSCREEN ───────────────────────────────────────────────────────────────
+function toggleFullscreen() {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen();
+  }
+}
+// Auto-request fullscreen on load (may be blocked without user gesture)
+// User can click the button manually
+document.addEventListener('keydown', e => {
+  if (e.key === 'f' || e.key === 'F') toggleFullscreen();
+  if (e.key === 'Escape' && document.fullscreenElement) document.exitFullscreen();
+});
+
+// ─── STATE ────────────────────────────────────────────────────────────────────
+let currentSrc = null;  // track to avoid unnecessary element recreation
+let syncTimer  = null;
+
+// ─── BROADCAST CHANNEL ────────────────────────────────────────────────────────
+let bc = null;
+try {
+  bc = new BroadcastChannel('livesim_output');
+  bc.onmessage = e => {
+    if (e.data.type === 'pgm_state') applyState(e.data);
+  };
+  // Request current state from main app
+  bc.postMessage({ type: 'request_state' });
+  setTimeout(() => bc.postMessage({ type: 'request_state' }), 1000); // retry
+  document.getElementById('conn-pill').textContent = 'Connected';
+  document.getElementById('conn-pill').className = 'conn-pill ok';
+  document.getElementById('standby-conn').textContent = 'Connected — waiting for output source...';
+} catch(err) {
+  document.getElementById('conn-pill').textContent = 'BroadcastChannel not supported';
+  document.getElementById('standby-conn').textContent = 'BroadcastChannel not supported in this browser.';
+}
+
+// ─── APPLY STATE ──────────────────────────────────────────────────────────────
+function applyState(data) {
+  applyMedia(data.inp, data.currentTime, data.duration);
+  applyFTB(data.ftbOn);
+  applyLT(data.pgmLT, data.ltFade);
+  applyScore(data.scoreData, data.scorePos);
+  applyCov(data.covData);
+  applyReplayBadge(data.replayState, data.replaySpeed);
+}
+
+// ── MEDIA ────────────────────────────────────────────────────────────────────
+function applyMedia(inp, currentTime, duration) {
+  const area    = document.getElementById('media-area');
+  const standby = document.getElementById('standby');
+
+  if (!inp) {
+    area.innerHTML = '';
+    currentSrc = null;
+    standby.style.display = 'flex';
+    return;
+  }
+
+  standby.style.display = 'none';
+
+  // Only recreate element if source changed
+  const srcKey = inp.src + '|' + inp.type + '|' + (inp.colType || '') + '|' + (inp.customColor || '');
+  if (srcKey === currentSrc) {
+    // Just sync time if video
+    const vid = area.querySelector('video');
+    if (vid && currentTime != null && Math.abs(vid.currentTime - currentTime) > 0.8) {
+      vid.currentTime = currentTime;
+    }
+    return;
+  }
+  currentSrc = srcKey;
+
+  // Build new element
+  area.innerHTML = '';
+  let el;
+
+  if (inp.type === 'video') {
+    el = document.createElement('video');
+    el.src = inp.src;
+    el.autoplay  = true;
+    el.muted     = false;  // OUTPUT has audio!
+    el.loop      = true;
+    el.playsInline = true;
+    el.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;';
+    el.play().catch(() => {
+      // Autoplay with audio blocked — try muted first then unmute on interaction
+      el.muted = true;
+      el.play().catch(() => {});
+      document.addEventListener('click', () => { el.muted = false; }, { once: true });
+    });
+    if (currentTime != null) {
+      el.addEventListener('loadedmetadata', () => {
+        if (Math.abs(el.currentTime - currentTime) > 0.8) el.currentTime = currentTime;
+      }, { once: true });
+    }
+  } else if (inp.type === 'still' || inp.type === 'logo') {
+    el = document.createElement('img');
+    el.src = inp.src;
+    el.alt = inp.name || '';
+    el.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:' + (inp.type === 'logo' ? 'contain' : 'cover') + ';display:block;background:#000;';
+  } else if (inp.type === 'colour') {
+    el = document.createElement('div');
+    el.className = 'fill-div';
+    if (inp.colType === 'bars') el.className += ' col-bars';
+    else if (inp.colType === 'black') el.className += ' col-black';
+    else if (inp.colType === 'white') el.className += ' col-white';
+    else el.style.background = inp.customColor || '#000';
+    el.style.cssText += ';position:absolute;inset:0;';
+  }
+
+  if (el) area.appendChild(el);
+
+  // Show source label briefly
+  showSourceLabel(inp.name);
+}
+
+function showSourceLabel(name) {
+  const lbl = document.getElementById('source-label');
+  lbl.textContent = name;
+  lbl.classList.add('visible');
+  clearTimeout(lbl._timer);
+  lbl._timer = setTimeout(() => lbl.classList.remove('visible'), 2500);
+}
+
+// ── FTB ──────────────────────────────────────────────────────────────────────
+let lastFtb = null;
+function applyFTB(on) {
+  if (on === lastFtb) return;
+  lastFtb = on;
+  const ov = document.getElementById('ftb-overlay');
+  ov.style.transition = 'opacity 500ms ease';
+  ov.classList.toggle('active', !!on);
+}
+
+// ── LOWER THIRD ───────────────────────────────────────────────────────────────
+let lastLTKey = null;
+function applyLT(lt, fade) {
+  const key = lt ? JSON.stringify(lt) : null;
+  if (key === lastLTKey) return;
+  lastLTKey = key;
+  const layer = document.getElementById('lt-layer');
+  layer.innerHTML = '';
+  if (!lt) return;
+  const d = document.createElement('div');
+  d.className = 'lt-overlay ' + (lt.pos || 'bottom-left');
+  d.style.animationDuration = (fade || 400) + 'ms';
+  d.innerHTML = `<div class="lt-title" style="background:${lt.bg};color:${lt.fg};">${lt.title}</div>
+    ${lt.sub ? `<div class="lt-sub" style="color:${lt.fg};">${lt.sub}</div>` : ''}`;
+  layer.appendChild(d);
+}
+
+// ── SCORE BAR ─────────────────────────────────────────────────────────────────
+let lastScoreKey = null;
+function applyScore(data, pos) {
+  const key = data ? JSON.stringify(data) + pos : null;
+  const layer = document.getElementById('score-layer');
+  if (!data) { layer.style.display = 'none'; lastScoreKey = null; return; }
+  if (key === lastScoreKey) return;
+  lastScoreKey = key;
+  layer.style.display = 'block';
+  layer.className = 'score-layer pos-' + (pos || 'bottom');
+  layer.innerHTML = `
+    <div class="score-bar">
+      <div class="sb-home" style="background:${data.homeCol};">${data.home}</div>
+      <div class="sb-center">
+        <span class="sb-score">${data.homeScore}</span>
+        <span class="sb-sep">—</span>
+        <span class="sb-score">${data.awayScore}</span>
+        <span class="sb-period">${data.period}</span>
+      </div>
+      <div class="sb-away" style="background:${data.awayCol};">${data.away}</div>
+    </div>`;
+}
+
+// ── CUSTOM OVERLAY ────────────────────────────────────────────────────────────
+let lastCovKey = null;
+function applyCov(d) {
+  const key = d ? JSON.stringify(d) : null;
+  const layer = document.getElementById('cov-layer');
+  if (!d) { layer.style.display = 'none'; lastCovKey = null; return; }
+  if (key === lastCovKey) return;
+  lastCovKey = key;
+  layer.style.display = 'block';
+  layer.textContent = d.text || '';
+  layer.style.color = d.fg;
+  layer.style.background = hexRgba(d.bg, (d.opacity || 70) / 100);
+  layer.style.fontSize = (d.size || 18) + 'px';
+  layer.style.fontWeight = d.bold ? '700' : '400';
+  layer.style.left = (d.x || 10) + '%';
+  layer.style.top  = (d.y || 10) + '%';
+}
+
+// ── REPLAY BADGE ──────────────────────────────────────────────────────────────
+function applyReplayBadge(state, speed) {
+  const badge = document.getElementById('replay-badge');
+  if (state === 'playing' || state === 'looping') {
+    badge.style.display = 'block';
+    badge.textContent = (state === 'looping' ? '⟳ ' : '▶ ') + 'REPLAY  ' + (speed || 1) + 'x';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+// ── UTILS ────────────────────────────────────────────────────────────────────
+function hexRgba(hex, a) {
+  try {
+    const r = parseInt(hex.slice(1,3), 16), g = parseInt(hex.slice(3,5), 16), b = parseInt(hex.slice(5,7), 16);
+    return `rgba(${r},${g},${b},${a})`;
+  } catch(e) { return 'rgba(0,0,0,0.7)'; }
+}
+</script>
+</body>
+</html>
