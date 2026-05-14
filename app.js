@@ -155,6 +155,7 @@ const S = {
   savedClips: [],
   configuredTrans: { Cut: { dur: 500 }, Fade: { dur: 1000 }, Wipe: { dur: 800 }, Fly: { dur: 800 }, Zoom: { dur: 800 } },
   covData: { prv: { text: '', fg: '#fff', bg: '#000', opacity: 70, size: 18, bold: false, x: 10, y: 10 }, pgm: { text: '', fg: '#fff', bg: '#000', opacity: 70, size: 18, bold: false, x: 10, y: 10 } },
+  overlays: [],  // multi-overlay system
   scoreData: { home: 'HOME', away: 'AWAY', homeScore: 0, awayScore: 0, period: 'Q1', homeCol: '#cc0000', awayCol: '#0044cc' },
   scorePrv: false, scorePgm: false, scorePos: 'bottom',
   stingerSrc: null,   // ObjectURL string for stinger
@@ -173,9 +174,9 @@ window.addEventListener('DOMContentLoaded', async () => {
   startVideoTimeClock();
   startClockDisplay();
   setupKeyboard();
-  setupDragOverlays();
   setupScoreSync();
   setupReplayChannel();
+  setupOverlayDrag();
 
   // Restore settings first (synchronous)
   loadSettings();
@@ -492,33 +493,48 @@ function placePgmCut(inp) {
 }
 
 // ─── SWITCHING ────────────────────────────────────────────────────────────────
+// toPreview  → only changes preview bus, never touches program
+// toPgmDirect → cuts to program, old program goes to preview
+// doTransition → sends preview to program (cut or fade), old program to preview
+
 function toPreview(id) {
+  if (id === S.output) return; // already in program — leave it alone
   S.preview = id;
-  const inp = S.inputs.find(i => i.id === id);
-  if (id !== S.output) placePrv(inp);
+  placePrv(S.inputs.find(i => i.id === id));
   renderAll();
 }
 
 function toPgmDirect(id) {
   if (pgmLocked) return;
   const inp = S.inputs.find(i => i.id === id); if (!inp) return;
+  if (id === S.output) return; // already in program
+
   const oldPgmId = S.output;
   S.output = id;
-  S.preview = (oldPgmId && oldPgmId !== id) ? oldPgmId : (S.preview === id ? null : S.preview);
+  S.preview = oldPgmId || null;  // old program becomes preview
+
   placePgmCut(inp);
-  if (oldPgmId && oldPgmId !== id) placePrv(S.inputs.find(i => i.id === oldPgmId));
-  else if (!oldPgmId) { placePrv(null); S.preview = null; }
+  if (oldPgmId) {
+    const old = S.inputs.find(i => i.id === oldPgmId);
+    if (old) placePrv(old); else { S.preview = null; placePrv(null); }
+  } else {
+    placePrv(null);
+  }
   setOnAir(true); renderAll();
 }
 
 function doTransition() {
   if (pgmLocked) return;
   if (S.preview === null) return;
+  if (S.preview === S.output) return;
+
   const prvId = S.preview, pgmId = S.output;
   const inpNext = S.inputs.find(i => i.id === prvId);
   const inpPrev = pgmId ? S.inputs.find(i => i.id === pgmId) : null;
+
   if (S.trans === 'Cut') {
-    S.output = prvId; S.preview = pgmId || null;
+    S.output = prvId;
+    S.preview = pgmId || null;
     placePgmCut(inpNext);
     if (inpPrev) placePrv(inpPrev); else { placePrv(null); S.preview = null; }
     setOnAir(true); renderAll();
@@ -530,27 +546,40 @@ function doTransition() {
 function doFadeTrans(inpNext, inpPrev, prvId, pgmId) {
   pgmLocked = true;
   const inId = inactiveId(), inLayer = inactiveLyr();
+  const curLayer = activeLyr();
+
+  // Load incoming content into the inactive layer
   while (inLayer.firstChild) inLayer.removeChild(inLayer.firstChild);
   const el = getEl(inpNext);
-  el.muted = true; // start muted during transition
+  el.muted = true;
   inLayer.appendChild(el);
   if (inpNext.type === 'video') el.play().catch(() => {});
+
   document.getElementById('pgm-src').textContent = inpNext.name;
   document.getElementById('pgm-empty').style.display = 'none';
+
+  // ★ FIX: incoming layer must be ABOVE current layer so it fades in on top
+  curLayer.style.zIndex = '1';
+  inLayer.style.zIndex = '2';
   inLayer.style.transition = 'none';
   inLayer.style.opacity = '0';
-  void inLayer.offsetHeight;
+  void inLayer.offsetHeight; // force reflow so transition fires
   inLayer.style.transition = `opacity ${S.duration}ms ease`;
   inLayer.style.opacity = '1';
+
   setTimeout(() => {
     pgmActive = inId;
+    // ★ FIX: old layer resets to opacity 0 (not 1) so it doesn't bleed through next time
     const oldLyr = lyr(inId === 'a' ? 'b' : 'a');
     while (oldLyr.firstChild) oldLyr.removeChild(oldLyr.firstChild);
-    oldLyr.style.transition = 'none'; oldLyr.style.opacity = '1'; oldLyr.style.zIndex = '1';
+    oldLyr.style.transition = 'none';
+    oldLyr.style.opacity = '0';
+    oldLyr.style.zIndex = '1';
     inLayer.style.zIndex = '1';
-    S.output = prvId; S.preview = pgmId || null;
+
+    S.output = prvId;
+    S.preview = pgmId || null;
     if (inpPrev) placePrv(inpPrev); else { placePrv(null); S.preview = null; }
-    // ★ AUDIO: unmute after transition complete
     muteAllVideos(); unmutePgm(inpNext);
     pgmLocked = false; setOnAir(true); renderAll();
   }, S.duration + 50);
@@ -632,21 +661,22 @@ function playStinger(cb) {
   const done = () => { if (fired) return; fired = true; overlay.style.display = 'none'; overlay.innerHTML = ''; if (cb) cb(); };
 
   if (S.stingerSrc) {
-    // Create a fresh video element — do NOT clone, set src explicitly
     const v = document.createElement('video');
     v.src = S.stingerSrc;
     v.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;';
-    v.muted = true; // stinger is usually silent
+    v.muted = true;
     v.playsInline = true;
     overlay.appendChild(v);
-    // Wait for canplay, then play
-    const tryPlay = () => { v.play().then(() => {}).catch(() => done()); };
     v.addEventListener('ended', done);
     v.addEventListener('error', done);
-    v.addEventListener('canplay', tryPlay, { once: true });
-    v.load();
-    // Hard fallback: if video hasn't ended in 8 seconds, fire anyway
-    setTimeout(done, 8000);
+    // ★ FIX: don't wait for canplay — just play() directly; muted videos autoplay without gesture
+    v.play().catch(() => {
+      // If play rejected, fall back to default flash immediately
+      overlay.innerHTML = '';
+      done(); // skip stinger, just fire callback
+    });
+    // Safety net: max 6s
+    setTimeout(done, 6000);
   } else {
     // Default: white flash
     overlay.style.background = '#fff';
@@ -854,58 +884,195 @@ function renderLTSavedList() {
 function applyLTSaved(i, which) { const lt=S.lts[i]; renderLTonMon(which,lt); if(which==='prv')S.prvLT=lt; else S.pgmLT=lt; }
 function delLT(i) { S.lts.splice(i,1); renderLTSavedList(); saveSettings(); }
 
-// ─── CUSTOM OVERLAY ───────────────────────────────────────────────────────────
-function liveCov(which) {
-  const d = S.covData[which];
-  d.text=document.getElementById('cov-'+which+'-text').value;
-  d.fg=document.getElementById('cov-'+which+'-fg').value;
-  d.bg=document.getElementById('cov-'+which+'-bg').value;
-  d.opacity=parseInt(document.getElementById('cov-'+which+'-op').value)||70;
-  d.size=parseInt(document.getElementById('cov-'+which+'-sz').value)||18;
-  d.bold=document.getElementById('cov-'+which+'-bold').checked;
-  const el=document.getElementById(which+'-cov');
-  if(el.style.display!=='none') applyCov(which);
-}
-function applyCov(which) {
-  const d=S.covData[which], el=document.getElementById(which+'-cov'); if(!el)return;
-  el.textContent=d.text||'(overlay)';
-  el.style.color=d.fg; el.style.background=hex2rgba(d.bg,d.opacity/100);
-  el.style.fontSize=d.size+'px'; el.style.fontWeight=d.bold?'700':'400';
-  el.style.left=d.x+'%'; el.style.top=d.y+'%';
-}
-function showCov(which){liveCov(which);const el=document.getElementById(which+'-cov');el.style.display='block';applyCov(which);}
-function hideCov(which){document.getElementById(which+'-cov').style.display='none';}
-function hex2rgba(hex,a){const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},${a})`;}
-function switchOTab(which,btn){document.querySelectorAll('.otab').forEach(b=>b.classList.remove('active'));document.querySelectorAll('.ot-panel').forEach(p=>p.style.display='none');btn.classList.add('active');document.getElementById('ot-'+which).style.display='flex';}
 
-// ─── DRAG OVERLAYS ────────────────────────────────────────────────────────────
-function setupDragOverlays(){['prv','pgm'].forEach(w=>{makeDraggable(w+'-cov',w+'-screen',w,'cov');makeDraggable(w+'-score',w+'-screen',w,'score');});}
-function makeDraggable(elId,cId,which,type){
-  const el=document.getElementById(elId);if(!el)return;
-  let drag=false,sx=0,sy=0,sl=0,st=0;
-  el.addEventListener('mousedown',e=>{if(e.button!==0)return;e.preventDefault();drag=true;sx=e.clientX;sy=e.clientY;const r=el.getBoundingClientRect();sl=r.left;st=r.top;});
-  document.addEventListener('mousemove',e=>{if(!drag)return;const cr=document.getElementById(cId).getBoundingClientRect();const xp=Math.max(0,Math.min(90,((sl+e.clientX-sx-cr.left)/cr.width)*100));const yp=Math.max(0,Math.min(90,((st+e.clientY-sy-cr.top)/cr.height)*100));el.style.left=xp+'%';el.style.top=yp+'%';if(type==='cov'){S.covData[which].x=xp;S.covData[which].y=yp;}});
-  document.addEventListener('mouseup',()=>drag=false);
+// ─── MULTI-OVERLAY SYSTEM ─────────────────────────────────────────────────────
+// S.overlays = [{ id, type:'text'|'image', name, target:'none'|'prv'|'pgm'|'both',
+//                 x, y, text, fg, bg, opacity, size, bold, src, width, imgOpacity }]
+
+let pendingOverlayType = null;
+
+function startAddOverlay(type) {
+  pendingOverlayType = type;
+  const form = document.getElementById('add-ovl-form');
+  form.style.cssText = 'display:flex;flex-direction:column;gap:7px;border:1px solid #333;padding:10px;border-radius:1px;background:#1a1a1a;';
+  document.getElementById('add-ovl-title').textContent = type === 'text' ? 'New Text Overlay' : 'New Image / Logo Overlay';
+  document.getElementById('aof-text-fields').style.display  = type === 'text'  ? '' : 'none';
+  document.getElementById('aof-image-fields').style.display = type === 'image' ? '' : 'none';
+  document.getElementById('aof-name').value = '';
+}
+function cancelAddOverlay() {
+  document.getElementById('add-ovl-form').style.display = 'none';
+}
+async function confirmAddOverlay() {
+  const type = pendingOverlayType;
+  const name = document.getElementById('aof-name').value.trim() || (type === 'text' ? 'Text overlay' : 'Image overlay');
+  const ov = { id: Date.now() + Math.random(), type, name, target: 'none', x: 10, y: 10 };
+
+  if (type === 'text') {
+    ov.text    = document.getElementById('aof-text').value || 'Overlay';
+    ov.fg      = document.getElementById('aof-fg').value;
+    ov.bg      = document.getElementById('aof-bg').value;
+    ov.opacity = parseInt(document.getElementById('aof-op').value) || 70;
+    ov.size    = parseInt(document.getElementById('aof-sz').value) || 18;
+    ov.bold    = document.getElementById('aof-bold').checked;
+  } else {
+    const f = document.getElementById('aof-img').files[0];
+    if (!f) { alert('Select an image file.'); return; }
+    ov.src        = URL.createObjectURL(f);
+    ov.width      = parseInt(document.getElementById('aof-w').value) || 20;
+    ov.imgOpacity = parseInt(document.getElementById('aof-img-op').value) || 100;
+    try { await dbPut({ id: ov.id, name, type: 'overlay-image' }, f); } catch(e) {}
+  }
+
+  S.overlays.push(ov);
+  cancelAddOverlay();
+  renderOverlayModal();
+  renderAllOverlays();
+  setupOverlayDrag();
+  saveSettings();
+}
+function removeOverlay(id) {
+  S.overlays = S.overlays.filter(o => o.id !== id);
+  renderOverlayModal(); renderAllOverlays(); saveSettings();
+}
+function cycleOverlayTarget(id) {
+  const ov = S.overlays.find(o => o.id === id); if (!ov) return;
+  const cycle = ['none','prv','pgm','both'];
+  ov.target = cycle[(cycle.indexOf(ov.target) + 1) % cycle.length];
+  renderOverlayModal(); renderAllOverlays(); setupOverlayDrag(); saveSettings();
 }
 
-// ─── SCORE BAR ────────────────────────────────────────────────────────────────
-function buildScoreHTML(d){return`<div class="score-bar"><div class="sb-home" style="background:${d.homeCol};">${d.home}</div><div class="sb-center"><span class="sb-score">${d.homeScore}</span><span class="sb-sep">—</span><span class="sb-score">${d.awayScore}</span><span class="sb-period">${d.period}</span></div><div class="sb-away" style="background:${d.awayCol};">${d.away}</div></div>`;}
-function renderScoreBars(){
-  const d={...S.scoreData};
-  const pos=(document.getElementById('score-pos')?.value||'bottom'); S.scorePos=pos;
-  ['prv','pgm'].forEach(w=>{const wrap=document.getElementById(w+'-score');wrap.innerHTML=buildScoreHTML(d);wrap.className='score-layer pos-'+pos;});
-  const prev=document.getElementById('score-preview-wrap'); if(prev)prev.innerHTML=buildScoreHTML(d);
+function buildOverlayEl(ov, which) {
+  const div = document.createElement('div');
+  div.className = 'ovl-item';
+  div.style.left = ov.x + '%';
+  div.style.top  = ov.y + '%';
+  div.dataset.ovId  = ov.id;
+  div.dataset.which = which;
+
+  if (ov.type === 'text') {
+    const inner = document.createElement('div');
+    inner.className = 'ovl-text-inner';
+    inner.textContent = ov.text || '';
+    inner.style.cssText = `color:${ov.fg};background:${hex2rgba(ov.bg,(ov.opacity||70)/100)};font-size:${ov.size||18}px;font-weight:${ov.bold?'700':'400'};`;
+    div.appendChild(inner);
+  } else if (ov.type === 'image' && ov.src) {
+    const img = document.createElement('img');
+    img.src = ov.src;
+    img.style.width   = (ov.width || 20) + '%';
+    img.style.opacity = (ov.imgOpacity || 100) / 100;
+    img.style.display = 'block';
+    img.draggable = false;
+    div.appendChild(img);
+  }
+  return div;
 }
-function showScore(which){renderScoreBars();if(which==='prv'||which==='both'){document.getElementById('prv-score').style.display='block';S.scorePrv=true;}if(which==='pgm'||which==='both'){document.getElementById('pgm-score').style.display='block';S.scorePgm=true;}}
-function hideScore(which){if(which==='all'||which==='prv'){document.getElementById('prv-score').style.display='none';S.scorePrv=false;}if(which==='all'||which==='pgm'){document.getElementById('pgm-score').style.display='none';S.scorePgm=false;}}
-function adjScore(team,delta,reset=false){if(reset)S.scoreData[team+'Score']=0;else S.scoreData[team+'Score']=Math.max(0,S.scoreData[team+'Score']+delta);document.getElementById('score-'+team+'-val').textContent=S.scoreData[team+'Score'];manualScore();broadcastScore();}
-function manualScore(){S.scoreData.home=document.getElementById('score-home-name')?.value||'HOME';S.scoreData.away=document.getElementById('score-away-name')?.value||'AWAY';S.scoreData.period=document.getElementById('score-period')?.value||'Q1';S.scoreData.homeCol=document.getElementById('score-home-col')?.value||'#cc0000';S.scoreData.awayCol=document.getElementById('score-away-col')?.value||'#0044cc';if(S.scorePrv||S.scorePgm)renderScoreBars();else{const prev=document.getElementById('score-preview-wrap');if(prev)prev.innerHTML=buildScoreHTML(S.scoreData);}saveSettings();broadcastScore();}
-function setPeriod(p){const el=document.getElementById('score-period');if(el)el.value=p;S.scoreData.period=p;manualScore();}
-function openScoreController(){window.open('scores.html','_blank');}
-function openReplayManager(){window.open('replay.html','_blank');}
+
+function renderAllOverlays() {
+  ['prv', 'pgm'].forEach(which => {
+    const layer = document.getElementById(which + '-ovl'); if (!layer) return;
+    layer.innerHTML = '';
+    S.overlays.forEach(ov => {
+      if (ov.target === which || ov.target === 'both') {
+        layer.appendChild(buildOverlayEl(ov, which));
+      }
+    });
+  });
+}
+
+function renderOverlayModal() {
+  const list = document.getElementById('ovl-list'); if (!list) return;
+  document.getElementById('ovl-count').textContent = S.overlays.length;
+  if (!S.overlays.length) {
+    list.innerHTML = '<span style="font-size:10px;color:#444;">No overlays. Add a text or image overlay above.</span>';
+    return;
+  }
+  list.innerHTML = S.overlays.map(ov => {
+    const tgt = ov.target || 'none';
+    const tgtLabel = { none:'OFF', prv:'PRV', pgm:'PGM', both:'BOTH' }[tgt];
+    const tgtCls   = { none:'', prv:'on-prv', pgm:'on-pgm', both:'on-both' }[tgt];
+    return `<div class="ovl-row">
+      <span class="ovl-row-type">${ov.type === 'image' ? '🖼' : 'T'}</span>
+      <span class="ovl-row-name" title="${ov.name}">${ov.name}</span>
+      <button class="ovl-tgt-btn ${tgtCls}" onclick="cycleOverlayTarget(${ov.id})" title="Click to cycle: OFF → PRV → PGM → BOTH">${tgtLabel}</button>
+      <button class="ovl-del" onclick="removeOverlay(${ov.id})">✕</button>
+    </div>`;
+  }).join('');
+}
+
+let overlayDragSetup = false;
+function setupOverlayDrag() {
+  if (overlayDragSetup) return;
+  overlayDragSetup = true;
+  ['prv-screen', 'pgm-screen'].forEach(screenId => {
+    const screen = document.getElementById(screenId); if (!screen) return;
+    let dragging = null, sx = 0, sy = 0, startX = 0, startY = 0;
+    screen.addEventListener('mousedown', e => {
+      const item = e.target.closest('.ovl-item');
+      if (!item) return;
+      e.preventDefault();
+      dragging = item;
+      sx = e.clientX; sy = e.clientY;
+      startX = parseFloat(item.style.left) || 0;
+      startY = parseFloat(item.style.top)  || 0;
+    });
+    document.addEventListener('mousemove', e => {
+      if (!dragging) return;
+      const cr = screen.getBoundingClientRect();
+      const xp = Math.max(0, Math.min(90, startX + ((e.clientX - sx) / cr.width  * 100)));
+      const yp = Math.max(0, Math.min(90, startY + ((e.clientY - sy) / cr.height * 100)));
+      dragging.style.left = xp + '%'; dragging.style.top = yp + '%';
+      const ovId = parseFloat(dragging.dataset.ovId);
+      const ov = S.overlays.find(o => o.id === ovId);
+      if (ov) { ov.x = xp; ov.y = yp; }
+      if (ov && ov.target === 'both') {
+        const other = dragging.dataset.which === 'prv' ? 'pgm' : 'prv';
+        const otherLayer = document.getElementById(other + '-ovl');
+        if (otherLayer) {
+          const sib = otherLayer.querySelector(`[data-ov-id="${ovId}"]`);
+          if (sib) { sib.style.left = xp + '%'; sib.style.top = yp + '%'; }
+        }
+      }
+    });
+    document.addEventListener('mouseup', () => { if (dragging) { saveSettings(); dragging = null; } });
+  });
+}
+
+// ─── SCORE BAR (with logos) ────────────────────────────────────────────────────
+function loadScoreLogo(team, input) {
+  const f = input.files[0]; if (!f) return;
+  S.scoreData[team + 'Logo'] = URL.createObjectURL(f);
+  if (S.scorePrv || S.scorePgm) renderScoreBars();
+  else { const p = document.getElementById('score-preview-wrap'); if (p) p.innerHTML = buildScoreHTML(S.scoreData); }
+}
+function clearScoreLogo(team) {
+  S.scoreData[team + 'Logo'] = null;
+  if (S.scorePrv || S.scorePgm) renderScoreBars();
+  else { const p = document.getElementById('score-preview-wrap'); if (p) p.innerHTML = buildScoreHTML(S.scoreData); }
+}
+function buildScoreHTML(d) {
+  const hl = d.homeLogo ? `<img src="${d.homeLogo}" class="sb-logo">` : '';
+  const al = d.awayLogo ? `<img src="${d.awayLogo}" class="sb-logo">` : '';
+  return `<div class="score-bar"><div class="sb-home" style="background:${d.homeCol};">${hl}${d.home}</div><div class="sb-center"><span class="sb-score">${d.homeScore}</span><span class="sb-sep">—</span><span class="sb-score">${d.awayScore}</span><span class="sb-period">${d.period}</span></div><div class="sb-away" style="background:${d.awayCol};">${d.away}${al}</div></div>`;
+}
+function renderScoreBars() {
+  const d = { ...S.scoreData };
+  const pos = document.getElementById('score-pos')?.value || 'bottom'; S.scorePos = pos;
+  ['prv','pgm'].forEach(w => { const wrap = document.getElementById(w+'-score'); wrap.innerHTML = buildScoreHTML(d); wrap.className = 'score-layer pos-'+pos; });
+  const prev = document.getElementById('score-preview-wrap'); if (prev) prev.innerHTML = buildScoreHTML(d);
+}
+function showScore(which) { renderScoreBars(); if(which==='prv'||which==='both'){document.getElementById('prv-score').style.display='block';S.scorePrv=true;} if(which==='pgm'||which==='both'){document.getElementById('pgm-score').style.display='block';S.scorePgm=true;} }
+function hideScore(which) { if(which==='all'||which==='prv'){document.getElementById('prv-score').style.display='none';S.scorePrv=false;} if(which==='all'||which==='pgm'){document.getElementById('pgm-score').style.display='none';S.scorePgm=false;} }
+function adjScore(team,delta,reset=false){ if(reset)S.scoreData[team+'Score']=0; else S.scoreData[team+'Score']=Math.max(0,S.scoreData[team+'Score']+delta); document.getElementById('score-'+team+'-val').textContent=S.scoreData[team+'Score']; manualScore(); broadcastScore(); }
+function manualScore(){ S.scoreData.home=document.getElementById('score-home-name')?.value||'HOME'; S.scoreData.away=document.getElementById('score-away-name')?.value||'AWAY'; S.scoreData.period=document.getElementById('score-period')?.value||'Q1'; S.scoreData.homeCol=document.getElementById('score-home-col')?.value||'#cc0000'; S.scoreData.awayCol=document.getElementById('score-away-col')?.value||'#0044cc'; if(S.scorePrv||S.scorePgm)renderScoreBars(); else{const prev=document.getElementById('score-preview-wrap');if(prev)prev.innerHTML=buildScoreHTML(S.scoreData);} saveSettings(); broadcastScore(); }
+function setPeriod(p){ const el=document.getElementById('score-period'); if(el)el.value=p; S.scoreData.period=p; manualScore(); }
+function openScoreController(){ window.open('scores.html','_blank'); }
+function openReplayManager(){ window.open('replay.html','_blank'); }
 let scoreChannel=null;
-function setupScoreSync(){try{scoreChannel=new BroadcastChannel('livesim_scores');scoreChannel.onmessage=e=>{if(e.data.type==='score_update'){Object.assign(S.scoreData,e.data.data);syncUIFromState();if(S.scorePrv||S.scorePgm)renderScoreBars();}};}catch(e){}}
-function broadcastScore(){if(scoreChannel)scoreChannel.postMessage({type:'score_update',data:{...S.scoreData}});}
+function setupScoreSync(){ try{ scoreChannel=new BroadcastChannel('livesim_scores'); scoreChannel.onmessage=e=>{ if(e.data.type==='score_update'){Object.assign(S.scoreData,e.data.data);syncUIFromState();if(S.scorePrv||S.scorePgm)renderScoreBars();} }; }catch(e){} }
+function broadcastScore(){ if(scoreChannel)scoreChannel.postMessage({type:'score_update',data:{...S.scoreData}}); }
+
+function hex2rgba(hex,a){ try{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return`rgba(${r},${g},${b},${a})`;}catch(e){return'rgba(0,0,0,0.7)';} }
 
 // ─── CONFIG ──────────────────────────────────────────────────────────────────
 function addCustomTrans(){const fKey='F'+(6+customTransRows.length);if(6+customTransRows.length>12){alert('Max 7 slots');return;}customTransRows.push({key:fKey,trans:'Fade',dur:1000});renderCTList();}

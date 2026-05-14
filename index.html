@@ -49,7 +49,7 @@
         <div class="mon-screen" id="prv-screen">
           <div class="mon-media" id="prv-media"></div>
           <div class="lt-layer" id="prv-lt"></div>
-          <div class="cov-layer" id="prv-cov" style="display:none;"></div>
+          <div class="ovl-layer" id="prv-ovl"></div>
           <div class="score-layer" id="prv-score" style="display:none;"></div>
           <div class="mon-empty" id="prv-empty">PREVIEW</div>
         </div>
@@ -94,7 +94,7 @@
           <div class="mon-layer" id="pgm-layer-a"></div>
           <div class="mon-layer" id="pgm-layer-b" style="opacity:0;z-index:2;"></div>
           <div class="lt-layer" id="pgm-lt"></div>
-          <div class="cov-layer" id="pgm-cov" style="display:none;"></div>
+          <div class="ovl-layer" id="pgm-ovl"></div>
           <div class="score-layer" id="pgm-score" style="display:none;"></div>
           <div class="replay-badge" id="replay-badge" style="display:none;">REPLAY <span id="rpl-spd">1x</span></div>
           <div class="mon-empty" id="pgm-empty">OUTPUT</div>
@@ -218,35 +218,53 @@
 </div>
 </div>
 
-<!-- CUSTOM OVERLAY -->
+<!-- OVERLAYS (multi-overlay system) -->
 <div class="modal-bg" id="overlay-modal">
 <div class="modal modal-wide">
-  <div class="modal-hdr"><span>Custom Overlay</span><button class="modal-x" onclick="closeModal('overlay-modal')">✕</button></div>
+  <div class="modal-hdr"><span>Overlays</span><button class="modal-x" onclick="closeModal('overlay-modal')">✕</button></div>
   <div class="modal-body">
-    <div class="note-box">Drag overlays on the monitor to reposition. Preview and Output are independent.</div>
-    <div class="otabs"><button class="otab active" onclick="switchOTab('prv',this)">Preview</button><button class="otab" onclick="switchOTab('pgm',this)">Output</button></div>
-    <div id="ot-prv" class="ot-panel">
-      <label>Text</label><input type="text" id="cov-prv-text" placeholder="Overlay text" oninput="liveCov('prv')">
-      <div class="form-grid">
-        <div><label>Text colour</label><input type="color" id="cov-prv-fg" value="#ffffff" oninput="liveCov('prv')"></div>
-        <div><label>Background</label><input type="color" id="cov-prv-bg" value="#000000" oninput="liveCov('prv')"></div>
-        <div><label>Opacity %</label><input type="number" id="cov-prv-op" value="70" min="0" max="100" oninput="liveCov('prv')"></div>
-        <div><label>Size px</label><input type="number" id="cov-prv-sz" value="18" min="8" max="60" oninput="liveCov('prv')"></div>
-        <div><label>Bold</label><input type="checkbox" id="cov-prv-bold" oninput="liveCov('prv')"></div>
-      </div>
-      <div class="btn-row"><button class="mbtn" onclick="showCov('prv')">Show Preview</button><button class="mbtn mbtn-grey" onclick="hideCov('prv')">Hide</button></div>
+    <div class="note-box">Multiple overlays can be active simultaneously on Preview and/or Output. Drag them on the monitor to reposition.</div>
+    <div class="btn-row">
+      <button class="mbtn" onclick="startAddOverlay('text')">+ Text</button>
+      <button class="mbtn" onclick="startAddOverlay('image')">+ Image / Logo</button>
     </div>
-    <div id="ot-pgm" class="ot-panel" style="display:none;">
-      <label>Text</label><input type="text" id="cov-pgm-text" placeholder="Overlay text" oninput="liveCov('pgm')">
-      <div class="form-grid">
-        <div><label>Text colour</label><input type="color" id="cov-pgm-fg" value="#ffffff" oninput="liveCov('pgm')"></div>
-        <div><label>Background</label><input type="color" id="cov-pgm-bg" value="#000000" oninput="liveCov('pgm')"></div>
-        <div><label>Opacity %</label><input type="number" id="cov-pgm-op" value="70" min="0" max="100" oninput="liveCov('pgm')"></div>
-        <div><label>Size px</label><input type="number" id="cov-pgm-sz" value="18" min="8" max="60" oninput="liveCov('pgm')"></div>
-        <div><label>Bold</label><input type="checkbox" id="cov-pgm-bold" oninput="liveCov('pgm')"></div>
+
+    <!-- ADD OVERLAY FORM (shown when adding) -->
+    <div id="add-ovl-form" style="display:none;" class="form-section">
+      <div class="fs-lbl" id="add-ovl-title">New Text Overlay</div>
+
+      <div id="aof-text-fields">
+        <label>Text</label>
+        <input type="text" id="aof-text" placeholder="Overlay text">
+        <div class="form-grid">
+          <div><label>Text colour</label><input type="color" id="aof-fg" value="#ffffff"></div>
+          <div><label>Background</label><input type="color" id="aof-bg" value="#000000"></div>
+          <div><label>Opacity %</label><input type="number" id="aof-op" value="70" min="0" max="100"></div>
+          <div><label>Size px</label><input type="number" id="aof-sz" value="18" min="8" max="60"></div>
+          <div><label>Bold</label><input type="checkbox" id="aof-bold"></div>
+        </div>
       </div>
-      <div class="btn-row"><button class="mbtn" onclick="showCov('pgm')">Show Output</button><button class="mbtn mbtn-grey" onclick="hideCov('pgm')">Hide</button></div>
+
+      <div id="aof-image-fields" style="display:none;">
+        <label>Image file (.png .jpg .gif — transparent PNG recommended for logos)</label>
+        <input type="file" id="aof-img" accept="image/*">
+        <div class="form-grid">
+          <div><label>Width % of monitor</label><input type="number" id="aof-w" value="20" min="3" max="80"></div>
+          <div><label>Opacity %</label><input type="number" id="aof-img-op" value="100" min="0" max="100"></div>
+        </div>
+      </div>
+
+      <label>Name</label>
+      <input type="text" id="aof-name" placeholder="My overlay">
+      <div class="btn-row">
+        <button class="mbtn mbtn-green" onclick="confirmAddOverlay()">Add Overlay</button>
+        <button class="mbtn mbtn-grey" onclick="cancelAddOverlay()">Cancel</button>
+      </div>
     </div>
+
+    <!-- OVERLAY LIST -->
+    <div class="modal-list-hdr" style="margin-top:4px;">Active overlays (<span id="ovl-count">0</span>)</div>
+    <div id="ovl-list" style="display:flex;flex-direction:column;gap:4px;"></div>
   </div>
 </div>
 </div>
@@ -265,6 +283,12 @@
         <div><label>Home colour</label><input type="color" id="score-home-col" value="#cc0000" oninput="manualScore()"></div>
         <div><label>Away team</label><input type="text" id="score-away-name" value="AWAY" oninput="manualScore()"></div>
         <div><label>Away colour</label><input type="color" id="score-away-col" value="#0044cc" oninput="manualScore()"></div>
+        <div><label>Home logo (optional .png)</label><input type="file" id="score-home-logo" accept="image/*" onchange="loadScoreLogo('home',this)"></div>
+        <div><label>Away logo (optional .png)</label><input type="file" id="score-away-logo" accept="image/*" onchange="loadScoreLogo('away',this)"></div>
+      </div>
+      <div class="btn-row" style="margin-top:4px;">
+        <button class="mbtn mbtn-grey" onclick="clearScoreLogo('home')">Clear home logo</button>
+        <button class="mbtn mbtn-grey" onclick="clearScoreLogo('away')">Clear away logo</button>
       </div>
     </div>
     <div class="form-section">
